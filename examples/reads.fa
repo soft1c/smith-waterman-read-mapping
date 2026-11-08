@@ -1,0 +1,8 @@
+>read_01_exact
+ACGTTGCA
+>read_02_overlap
+TTGCAAGT
+>read_03_short
+GATGCT
+>read_04_mismatch
+GATGAT

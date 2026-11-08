@@ -1,0 +1,13 @@
+profile,mode,peak_rss_bytes,peak_rss_mib,samples
+small,online,4718592,4.5,1
+small,full,13336576,12.71875,1
+small,rolling,1900544,1.8125,1
+small,simd,2113536,2.015625,1
+medium,online,23035904,21.96875,1
+medium,full,338771968,323.078125,1
+medium,rolling,2654208,2.53125,1
+medium,simd,3440640,3.28125,1
+large,online,55689216,53.109375,1
+large,full,1346273280,1283.90625,1
+large,rolling,3604480,3.4375,1
+large,simd,5210112,4.96875,1
