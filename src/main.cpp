@@ -1,6 +1,8 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cctype>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -8,8 +10,10 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #if defined(__aarch64__) || defined(__arm64__)
@@ -47,6 +51,9 @@ struct Options {
     std::string reference_path;
     std::string reads_path;
     std::string mode = "rolling";
+    std::size_t threads = 0;
+    std::size_t tile_rows = 0;
+    std::size_t tile_columns = 2048;
     Scoring scoring;
 };
 
@@ -321,6 +328,365 @@ Alignment smith_waterman_trace(const std::string& read,
     return best;
 }
 
+struct WavefrontTile {
+    std::size_t height = 0;
+    std::size_t width = 0;
+    int best_score = 0;
+    std::size_t best_read_end = 0;
+    std::size_t best_reference_end = 0;
+};
+
+struct WavefrontTask {
+    std::size_t tile_row;
+    std::size_t tile_column;
+};
+
+Alignment smith_waterman_wavefront(const std::string& read,
+                                   const std::string& reference,
+                                   const Scoring& scoring,
+                                   std::size_t requested_threads,
+                                   std::size_t tile_rows,
+                                   std::size_t tile_columns,
+                                   double& dp_seconds) {
+    if (tile_columns == 0 || tile_columns % 4 != 0) {
+        throw std::runtime_error(
+            "Wavefront tile columns moraju biti pozitivan višekratnik broja 4");
+    }
+
+    // Short reads need enough tile rows to expose parallel work. Taller tiles
+    // reduce scheduling and border-storage overhead for long reads.
+    const std::size_t effective_tile_rows = tile_rows == 0
+        ? (read.size() <= 512 ? 8 : 64) : tile_rows;
+
+    const std::size_t tile_row_count =
+        read.size() / effective_tile_rows +
+        (read.size() % effective_tile_rows != 0);
+    const std::size_t tile_column_count =
+        reference.size() / tile_columns + (reference.size() % tile_columns != 0);
+    if (tile_column_count >
+        std::numeric_limits<std::size_t>::max() / tile_row_count) {
+        throw std::length_error("Wavefront tile grid is too large");
+    }
+    const std::size_t tile_count = tile_row_count * tile_column_count;
+    if (tile_column_count - 1 >
+        std::numeric_limits<std::size_t>::max() - tile_row_count) {
+        throw std::length_error("Wavefront has too many scheduling steps");
+    }
+    const std::size_t wavefront_count = tile_row_count + tile_column_count - 1;
+    const std::size_t bottom_stride = tile_columns + 1;
+    const std::size_t right_stride = effective_tile_rows + 1;
+    if (bottom_stride == 0 || right_stride == 0 ||
+        tile_count > std::numeric_limits<std::size_t>::max() / bottom_stride ||
+        tile_count > std::numeric_limits<std::size_t>::max() / right_stride) {
+        throw std::length_error("Wavefront border storage is too large");
+    }
+
+    const std::size_t direction_bytes_per_row =
+        reference.size() / 4 + (reference.size() % 4 != 0);
+    if (direction_bytes_per_row >
+        std::numeric_limits<std::size_t>::max() / read.size()) {
+        throw std::length_error("Traceback matrica je prevelika");
+    }
+    const std::size_t direction_bytes = read.size() * direction_bytes_per_row;
+    std::unique_ptr<std::uint8_t[]> directions(new std::uint8_t[direction_bytes]);
+    std::uint8_t* direction_data = directions.get();
+    const char* read_bases = read.data();
+    const char* reference_bases = reference.data();
+
+    std::vector<WavefrontTile> tiles(tile_count);
+    std::vector<int> bottom_borders(tile_count * bottom_stride);
+    std::vector<int> right_borders(tile_count * right_stride);
+    for (std::size_t tile_row = 0; tile_row < tile_row_count; ++tile_row) {
+        const std::size_t read_begin = tile_row * effective_tile_rows;
+        const std::size_t height =
+            std::min(effective_tile_rows, read.size() - read_begin);
+        for (std::size_t tile_column = 0; tile_column < tile_column_count;
+             ++tile_column) {
+            const std::size_t reference_begin = tile_column * tile_columns;
+            const std::size_t width =
+                std::min(tile_columns, reference.size() - reference_begin);
+            tiles[tile_row * tile_column_count + tile_column] =
+                WavefrontTile{height, width, 0, 0, 0};
+        }
+    }
+
+    const std::size_t maximum_wavefront_size =
+        std::min(tile_row_count, tile_column_count);
+    std::size_t worker_count = requested_threads;
+    if (worker_count == 0) {
+        worker_count = std::thread::hardware_concurrency();
+    }
+    worker_count = std::max<std::size_t>(1,
+        std::min(worker_count, maximum_wavefront_size));
+    const std::size_t background_worker_count = worker_count - 1;
+
+    std::vector<WavefrontTask> tasks;
+    tasks.reserve(maximum_wavefront_size);
+    std::vector<WavefrontTask> current_tasks;
+    current_tasks.reserve(maximum_wavefront_size);
+    std::vector<int> main_previous(tile_columns + 1);
+    std::vector<int> main_current(tile_columns + 1);
+    std::vector<std::vector<int>> worker_previous;
+    std::vector<std::vector<int>> worker_current;
+    if (background_worker_count > 0) {
+        worker_previous.reserve(background_worker_count);
+        worker_current.reserve(background_worker_count);
+        for (std::size_t worker = 0; worker < background_worker_count; ++worker) {
+            worker_previous.emplace_back(tile_columns + 1);
+            worker_current.emplace_back(tile_columns + 1);
+        }
+    }
+
+    std::mutex work_mutex;
+    std::condition_variable work_available;
+    std::condition_variable wavefront_complete;
+    std::atomic<std::size_t> next_task{0};
+    std::size_t generation = 0;
+    std::size_t completed_workers = 0;
+    bool stopping = false;
+
+    const auto process_tile = [&](const WavefrontTask& task,
+                                  std::vector<int>& previous,
+                                  std::vector<int>& current) {
+        const std::size_t tile_row = task.tile_row;
+        const std::size_t tile_column = task.tile_column;
+        const std::size_t tile_index = tile_row * tile_column_count + tile_column;
+        const std::size_t read_begin = tile_row * effective_tile_rows;
+        const std::size_t reference_begin = tile_column * tile_columns;
+        const WavefrontTile& tile = tiles[tile_index];
+        int* bottom = bottom_borders.data() + tile_index * bottom_stride;
+        int* right = right_borders.data() + tile_index * right_stride;
+
+        if (tile_row == 0) {
+            std::fill_n(previous.data(), tile.width + 1, 0);
+        } else {
+            const int* north = bottom_borders.data() +
+                (tile_index - tile_column_count) * bottom_stride;
+            std::copy_n(north, tile.width + 1, previous.data());
+        }
+        right[0] = previous[tile.width];
+
+        int tile_best_score = 0;
+        std::size_t tile_best_read_end = 0;
+        std::size_t tile_best_reference_end = 0;
+        for (std::size_t local_row = 1; local_row <= tile.height; ++local_row) {
+            const std::size_t read_index = read_begin + local_row;
+            const std::size_t direction_row_offset =
+                (read_index - 1) * direction_bytes_per_row;
+            if (tile_column == 0) {
+                current[0] = 0;
+            } else {
+                const int* west = right_borders.data() +
+                    (tile_index - 1) * right_stride;
+                current[0] = west[local_row];
+            }
+
+            const char read_base = read_bases[read_index - 1];
+            std::size_t local_column = 1;
+            for (; local_column + 3 <= tile.width; local_column += 4) {
+                std::uint8_t packed_directions = 0;
+                for (unsigned int packed_cell = 0; packed_cell < 4; ++packed_cell) {
+                    const std::size_t column = local_column + packed_cell;
+                    const std::size_t reference_index = reference_begin + column;
+                    const int substitution = read_base == reference_bases[reference_index - 1]
+                        ? scoring.match : scoring.mismatch;
+                    const int diagonal_score = previous[column - 1] + substitution;
+                    const int up_score = previous[column] + scoring.gap;
+                    const int left_score = current[column - 1] + scoring.gap;
+                    int score = std::max({0, diagonal_score, up_score, left_score});
+
+                    std::uint8_t direction = 0;
+                    if (score > 0) {
+                        if (diagonal_score == score) direction = 1;
+                        else if (up_score == score) direction = 2;
+                        else direction = 3;
+                    }
+                    current[column] = score;
+                    packed_directions |= static_cast<std::uint8_t>(
+                        direction << (packed_cell * 2));
+                    if (score > tile_best_score) {
+                        tile_best_score = score;
+                        tile_best_read_end = read_index;
+                        tile_best_reference_end = reference_index;
+                    }
+                }
+                const std::size_t first_reference_index =
+                    reference_begin + local_column;
+                direction_data[direction_row_offset +
+                    (first_reference_index - 1) / 4] = packed_directions;
+            }
+
+            if (local_column <= tile.width) {
+                std::uint8_t packed_directions = 0;
+                unsigned int shift = 0;
+                const std::size_t first_reference_index =
+                    reference_begin + local_column;
+                for (; local_column <= tile.width; ++local_column, shift += 2) {
+                    const std::size_t reference_index = reference_begin + local_column;
+                    const int substitution = read_base == reference_bases[reference_index - 1]
+                        ? scoring.match : scoring.mismatch;
+                    const int diagonal_score = previous[local_column - 1] + substitution;
+                    const int up_score = previous[local_column] + scoring.gap;
+                    const int left_score = current[local_column - 1] + scoring.gap;
+                    int score = std::max({0, diagonal_score, up_score, left_score});
+
+                    std::uint8_t direction = 0;
+                    if (score > 0) {
+                        if (diagonal_score == score) direction = 1;
+                        else if (up_score == score) direction = 2;
+                        else direction = 3;
+                    }
+                    current[local_column] = score;
+                    packed_directions |= static_cast<std::uint8_t>(direction << shift);
+                    if (score > tile_best_score) {
+                        tile_best_score = score;
+                        tile_best_read_end = read_index;
+                        tile_best_reference_end = reference_index;
+                    }
+                }
+                direction_data[direction_row_offset +
+                    (first_reference_index - 1) / 4] = packed_directions;
+            }
+            right[local_row] = current[tile.width];
+            std::swap(previous, current);
+        }
+
+        std::copy_n(previous.data(), tile.width + 1, bottom);
+        tiles[tile_index].best_score = tile_best_score;
+        tiles[tile_index].best_read_end = tile_best_read_end;
+        tiles[tile_index].best_reference_end = tile_best_reference_end;
+    };
+
+    std::vector<std::thread> workers;
+    if (background_worker_count > 0) {
+        workers.reserve(background_worker_count);
+        try {
+            for (std::size_t worker = 0;
+                 worker < background_worker_count; ++worker) {
+                workers.emplace_back([&, worker]() {
+                    auto& previous = worker_previous[worker];
+                    auto& current = worker_current[worker];
+                    std::size_t observed_generation = 0;
+                    while (true) {
+                        std::unique_lock<std::mutex> lock(work_mutex);
+                        work_available.wait(lock, [&]() {
+                            return stopping || generation != observed_generation;
+                        });
+                        if (stopping) return;
+                        observed_generation = generation;
+                        lock.unlock();
+
+                        for (;;) {
+                            const std::size_t task_index =
+                                next_task.fetch_add(1, std::memory_order_relaxed);
+                            if (task_index >= current_tasks.size()) break;
+                            process_tile(current_tasks[task_index], previous, current);
+                        }
+
+                        lock.lock();
+                        ++completed_workers;
+                        if (completed_workers == background_worker_count) {
+                            wavefront_complete.notify_one();
+                        }
+                    }
+                });
+            }
+        } catch (...) {
+            {
+                std::lock_guard<std::mutex> lock(work_mutex);
+                stopping = true;
+            }
+            work_available.notify_all();
+            for (auto& worker : workers) worker.join();
+            throw;
+        }
+    }
+
+    const auto dp_start = std::chrono::steady_clock::now();
+    for (std::size_t wavefront = 0; wavefront < wavefront_count; ++wavefront) {
+        tasks.clear();
+        const std::size_t first_tile_row = wavefront >= tile_column_count
+            ? wavefront - (tile_column_count - 1) : 0;
+        const std::size_t last_tile_row = std::min(wavefront, tile_row_count - 1);
+        for (std::size_t tile_row = first_tile_row;
+             tile_row <= last_tile_row; ++tile_row) {
+            tasks.push_back({tile_row, wavefront - tile_row});
+        }
+
+        if (background_worker_count == 0) {
+            for (const auto& task : tasks) {
+                process_tile(task, main_previous, main_current);
+            }
+        } else {
+            {
+                std::lock_guard<std::mutex> lock(work_mutex);
+                current_tasks = tasks;
+                next_task.store(0, std::memory_order_relaxed);
+                completed_workers = 0;
+                ++generation;
+            }
+            work_available.notify_all();
+            for (;;) {
+                const std::size_t task_index =
+                    next_task.fetch_add(1, std::memory_order_relaxed);
+                if (task_index >= current_tasks.size()) break;
+                process_tile(current_tasks[task_index], main_previous, main_current);
+            }
+            std::unique_lock<std::mutex> lock(work_mutex);
+            wavefront_complete.wait(lock, [&]() {
+                return completed_workers == background_worker_count;
+            });
+        }
+    }
+
+    if (background_worker_count > 0) {
+        {
+            std::lock_guard<std::mutex> lock(work_mutex);
+            stopping = true;
+        }
+        work_available.notify_all();
+        for (auto& worker : workers) worker.join();
+    }
+
+    Alignment best;
+    for (const auto& tile : tiles) {
+        if (tile.best_score > best.score ||
+            (tile.best_score == best.score && tile.best_score > 0 &&
+             (tile.best_read_end < best.read_end ||
+              (tile.best_read_end == best.read_end &&
+               tile.best_reference_end < best.reference_end)))) {
+            best.score = tile.best_score;
+            best.read_end = tile.best_read_end;
+            best.reference_end = tile.best_reference_end;
+        }
+    }
+
+    std::size_t read_index = best.read_end;
+    std::size_t reference_index = best.reference_end;
+    while (read_index > 0 && reference_index > 0) {
+        const std::size_t direction_row_offset =
+            (read_index - 1) * direction_bytes_per_row;
+        const std::size_t direction_index = reference_index - 1;
+        const unsigned int shift = static_cast<unsigned int>((direction_index % 4) * 2);
+        const std::uint8_t direction = static_cast<std::uint8_t>(
+            (direction_data[direction_row_offset + direction_index / 4] >> shift) & 0x3);
+        if (direction == 0) break;
+        if (direction == 1) {
+            --read_index;
+            --reference_index;
+        } else if (direction == 2) {
+            --read_index;
+        } else {
+            --reference_index;
+        }
+    }
+    best.read_start = read_index;
+    best.reference_start = reference_index;
+    dp_seconds += std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - dp_start).count();
+    return best;
+}
+
 void smith_waterman_simd_batch(const std::vector<Sequence>& reads,
                                const std::string& reference,
                                const Scoring& scoring,
@@ -479,7 +845,10 @@ std::string csv_escape(const std::string& value) {
 void print_usage(std::ostream& out) {
     out << "Upotreba: sw_mapper --reference ref.fa --reads reads.fa [opcije]\n"
            "Opcije:\n"
-           "  --mode full|rolling|trace|simd   sekvencijalno, compact trace ili batch SIMD\n"
+           "  --mode full|rolling|trace|wavefront|simd   način poravnanja\n"
+           "  --threads N                   broj wavefront radnika (0 = automatski)\n"
+           "  --tile-rows N                 redovi po pločici (0 = automatski)\n"
+           "  --tile-columns N              kolone po pločici, višekratnik 4 (default 2048)\n"
            "  --match N                    bodovi za podudaranje (default 2)\n"
            "  --mismatch N                 kazna za nepodudaranje (default -1)\n"
            "  --gap N                      linearna kazna za gap (default -2)\n"
@@ -500,6 +869,23 @@ int parse_int(const std::string& value, const std::string& option) {
     return result;
 }
 
+std::size_t parse_size(const std::string& value, const std::string& option) {
+    std::size_t parsed = 0;
+    unsigned long long result = 0;
+    try {
+        if (value.empty() || value.front() == '-') {
+            throw std::invalid_argument("negative or empty size");
+        }
+        result = std::stoull(value, &parsed);
+    } catch (const std::exception&) {
+        throw std::runtime_error("Neispravan broj za " + option + ": " + value);
+    }
+    if (parsed != value.size() || result > std::numeric_limits<std::size_t>::max()) {
+        throw std::runtime_error("Neispravan broj za " + option + ": " + value);
+    }
+    return static_cast<std::size_t>(result);
+}
+
 Options parse_options(int argc, char** argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
@@ -515,6 +901,9 @@ Options parse_options(int argc, char** argv) {
         if (arg == "--reference") options.reference_path = value;
         else if (arg == "--reads") options.reads_path = value;
         else if (arg == "--mode") options.mode = value;
+        else if (arg == "--threads") options.threads = parse_size(value, arg);
+        else if (arg == "--tile-rows") options.tile_rows = parse_size(value, arg);
+        else if (arg == "--tile-columns") options.tile_columns = parse_size(value, arg);
         else if (arg == "--match") options.scoring.match = parse_int(value, arg);
         else if (arg == "--mismatch") options.scoring.mismatch = parse_int(value, arg);
         else if (arg == "--gap") options.scoring.gap = parse_int(value, arg);
@@ -525,8 +914,15 @@ Options parse_options(int argc, char** argv) {
         throw std::runtime_error("Opcije --reference i --reads su obavezne");
     }
     if (options.mode != "full" && options.mode != "rolling" &&
-        options.mode != "trace" && options.mode != "simd") {
-        throw std::runtime_error("--mode mora biti full, rolling, trace ili simd");
+        options.mode != "trace" && options.mode != "wavefront" &&
+        options.mode != "simd") {
+        throw std::runtime_error(
+            "--mode mora biti full, rolling, trace, wavefront ili simd");
+    }
+    if (options.mode == "wavefront" &&
+        (options.tile_columns == 0 || options.tile_columns % 4 != 0)) {
+        throw std::runtime_error(
+            "Wavefront tile columns moraju biti pozitivan višekratnik broja 4");
     }
     if (options.scoring.match <= 0 || options.scoring.mismatch > 0 ||
         options.scoring.gap >= 0) {
@@ -561,6 +957,10 @@ int main(int argc, char** argv) {
                 } else if (options.mode == "trace") {
                     alignments[i] = smith_waterman_trace(
                         reads[i].bases, reference, options.scoring, dp_seconds);
+                } else if (options.mode == "wavefront") {
+                    alignments[i] = smith_waterman_wavefront(
+                        reads[i].bases, reference, options.scoring, options.threads,
+                        options.tile_rows, options.tile_columns, dp_seconds);
                 } else {
                     alignments[i] = smith_waterman_rolling(
                         reads[i].bases, reference, options.scoring, dp_seconds);

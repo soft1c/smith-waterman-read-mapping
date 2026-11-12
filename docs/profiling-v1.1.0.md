@@ -150,6 +150,35 @@ python3 scripts/benchmark_single.py --binary build/profile-release/sw_mapper \
 
 This is a CPU stack sample, not a hardware-counter trace. It cannot tell whether the hot instructions are limited by cache misses, memory bandwidth, branch prediction, or instruction throughput. The active developer directory is `/Library/Developer/CommandLineTools`; `xcrun xctrace` reports that `xctrace` is unavailable, and no full Xcode/Instruments installation was found. An Instruments Time Profiler and memory/counter trace should follow when that toolchain is available. Until then, this report does not claim a measured memory-stall bottleneck.
 
+## Single-read parallel iteration: v1.5.0
+
+The v1.4.0 profile left the scalar Smith–Waterman recurrence as the main cost. A read's DP grid has dependencies from the cell above and the cell to the left, so individual cells cannot be split arbitrarily between threads. v1.5.0 divides the grid into tiles and computes tiles along anti-diagonals. A tile starts after its north and west neighbors finish; tiles on the same anti-diagonal run concurrently. The main thread also claims tiles from the shared queue, while a persistent worker pool handles the remaining work for that alignment.
+
+Each tile retains only its bottom and right score borders. The packed 2-bit traceback directions are still recorded for each cell, and tile widths must be a multiple of four so neighboring workers never write the same packed byte. Tile-best endpoints are reduced by score and then earliest row/column, preserving the sequential `trace` tie behavior. Use `--mode wavefront`; `--threads 0` selects `std::thread::hardware_concurrency()`, and `--tile-rows 0` picks 8 rows for reads up to 512 bp or 64 rows for longer reads. `--tile-columns` defaults to 2048 and must be a multiple of four.
+
+The optimized build used Apple clang 21.0.0 with `-O3 -DNDEBUG -g` on an Apple M5 Pro / ARM64 running macOS 26.7.2. Single-read measurements compared the tagged v1.4.0 `trace` binary with v1.5.0 `wavefront --threads 0`; runs were interleaved, outputs were checked for exact CSV equality, and the reported values are medians:
+
+| Input | v1.4.0 `trace` | v1.5.0 `wavefront` | Speedup | Runs |
+|---|---:|---:|---:|---:|
+| Reference 100,000 bp; read 160 bp | 0.022558 s | 0.007018 s | 3.21× | 9 |
+| Reference 100,000 bp; read 10,000 bp | 1.288040 s | 0.155313 s | 8.29× | 7 |
+
+The 160 bp workload used seed `21021`; the 10,000 bp workload used seed `21022`. The speedup depends on the machine's core count and read/reference shape. In a separate eight-case randomized check, `wavefront` matched `trace` with varied odd sequence lengths, tile boundaries, and scoring parameters.
+
+Apple `/usr/bin/sample` captured a sustained run of twelve 10,000 bp alignments, processed one after another (the workload repeats the single-read kernel; reads are not parallelized with each other). Of 732 main-thread samples, 551 were in the tile-computation lambda and 139 in the condition-variable wait; the main thread now performs DP work instead of spending most of the run waiting for workers. Worker samples showed the same tile kernel and idle waits between anti-diagonals. This points to scheduling/barrier synchronization as the next software target; the stack sampler still cannot identify memory stalls or cache behavior. `xcrun xctrace` remains unavailable in the installed Command Line Tools.
+
+On the 10,000 bp read, `/usr/bin/time -l` reported 241.1 MiB maximum RSS for v1.4.0 and 303.5 MiB for v1.5.0 wavefront (about 62.4 MiB more). The extra memory stores tile borders alongside the packed traceback matrix. The tested read completed about 8.3× faster with that memory increase.
+
+Run the candidate with:
+
+```sh
+cmake -S . -B build/profile-release -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_FLAGS_RELEASE='-O3 -DNDEBUG -g'
+cmake --build build/profile-release -j
+build/profile-release/sw_mapper --reference build/single-profile-data/reference.fa \
+  --reads build/single-profile-data/reads.fa --mode wavefront --threads 0
+```
+
 ## Reproduction
 
-Use the same generated data, optimized build flags, and sampling interval for later versions. Record the complete binary version, compiler, macOS version, dataset parameters, wall time, DP time, and profile file. Compare each single-read optimization against rolling v1.1.0 for output equality and repeated runtime; keep the sampler capture separate from unprofiled timing runs because profiling adds overhead. In v1.4.0, the remaining software hotspot is the per-cell score recurrence and best-score tracking; hardware counters are still needed to classify any memory stalls.
+Use the same generated data, optimized build flags, and sampling interval for later versions. Record the complete binary version, compiler, macOS version, dataset parameters, wall time, DP time, and profile file. Compare each single-read optimization against rolling v1.1.0 for output equality and repeated runtime; keep the sampler capture separate from unprofiled timing runs because profiling adds overhead. In v1.5.0, scheduling between tile anti-diagonals is the next software hotspot; hardware counters are still needed to classify any memory stalls.

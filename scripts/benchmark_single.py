@@ -8,7 +8,13 @@ import statistics
 import subprocess
 
 
-def run(binary: pathlib.Path, reference: pathlib.Path, reads: pathlib.Path, mode: str):
+def run(
+    binary: pathlib.Path,
+    reference: pathlib.Path,
+    reads: pathlib.Path,
+    mode: str,
+    extra_options=(),
+):
     process = subprocess.run(
         [
             str(binary),
@@ -18,6 +24,7 @@ def run(binary: pathlib.Path, reference: pathlib.Path, reads: pathlib.Path, mode
             str(reads),
             "--mode",
             mode,
+            *extra_options,
         ],
         capture_output=True,
         text=True,
@@ -45,6 +52,14 @@ def main() -> None:
         action="store_true",
         help="compare only trace modes; useful when full-matrix mode would use too much memory",
     )
+    parser.add_argument(
+        "--include-wavefront",
+        action="store_true",
+        help="also benchmark and compare single-read tiled parallelism",
+    )
+    parser.add_argument("--threads", type=int, default=0)
+    parser.add_argument("--tile-rows", type=int, default=0)
+    parser.add_argument("--tile-columns", type=int, default=2048)
     args = parser.parse_args()
     if args.repeats <= 0:
         parser.error("repeats must be positive")
@@ -62,26 +77,48 @@ def main() -> None:
         parser.error(f"provide exactly one read; found {read_count}")
 
     modes = ("trace",) if args.trace_only else ("full", "rolling", "trace")
-    outputs = {mode: run(binary, reference, reads, mode)[0] for mode in modes}
-    if not args.trace_only and any(
-        outputs[mode] != outputs["rolling"] for mode in ("full", "trace")
-    ):
-        raise SystemExit("ERROR: full, rolling, and trace outputs differ")
+    if args.include_wavefront:
+        modes = (*modes, "wavefront")
+    wavefront_options = (
+        "--threads",
+        str(args.threads),
+        "--tile-rows",
+        str(args.tile_rows),
+        "--tile-columns",
+        str(args.tile_columns),
+    )
+
+    def run_mode(measured_binary, mode):
+        return run(
+            measured_binary,
+            reference,
+            reads,
+            mode,
+            wavefront_options if mode == "wavefront" else (),
+        )
+
+    outputs = {mode: run_mode(binary, mode)[0] for mode in modes}
+    reference_mode = "trace" if args.trace_only else "rolling"
+    if any(outputs[mode] != outputs[reference_mode] for mode in modes):
+        raise SystemExit(f"ERROR: candidate outputs differ from {reference_mode}")
     if baseline_binary is not None:
         baseline_output = run(baseline_binary, reference, reads, "trace")[0]
         if baseline_output != outputs["trace"]:
             raise SystemExit("ERROR: prior and candidate trace outputs differ")
-    print(
-        "correctness=exact (candidate and baseline trace CSV outputs match)"
-        if args.trace_only
-        else "correctness=exact (full, rolling, and trace CSV outputs match)"
-    )
+    if args.trace_only and args.include_wavefront:
+        print("correctness=exact (trace and wavefront CSV outputs match)")
+    elif args.trace_only:
+        print("correctness=exact (candidate and baseline trace CSV outputs match)")
+    elif args.include_wavefront:
+        print("correctness=exact (full, rolling, trace, and wavefront CSV outputs match)")
+    else:
+        print("correctness=exact (full, rolling, and trace CSV outputs match)")
 
     for mode in modes:
-        run(binary, reference, reads, mode)
+        run_mode(binary, mode)
     measurements = [(mode, binary, mode) for mode in modes]
     if baseline_binary is not None:
-        run(baseline_binary, reference, reads, "trace")
+        run_mode(baseline_binary, "trace")
         measurements.append(("baseline-trace", baseline_binary, "trace"))
     times = {label: [] for label, _, _ in measurements}
     gcups = {label: [] for label, _, _ in measurements}
@@ -89,7 +126,7 @@ def main() -> None:
         offset = repeat % len(measurements)
         run_order = measurements[offset:] + measurements[:offset]
         for label, measured_binary, mode in run_order:
-            _, seconds, rate = run(measured_binary, reference, reads, mode)
+            _, seconds, rate = run_mode(measured_binary, mode)
             times[label].append(seconds)
             gcups[label].append(rate)
 
@@ -104,6 +141,11 @@ def main() -> None:
         for mode in ("rolling", "trace"):
             print(f"speedup_{mode}_over_full={medians['full'] / medians[mode]:.3f}x")
         print(f"speedup_rolling_over_trace={medians['rolling'] / medians['trace']:.3f}x")
+    if args.include_wavefront:
+        print(
+            "speedup_trace_over_wavefront="
+            f"{medians['trace'] / medians['wavefront']:.3f}x"
+        )
     if baseline_binary is not None:
         print(
             "speedup_candidate_trace_over_baseline_trace="

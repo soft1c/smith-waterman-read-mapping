@@ -7,6 +7,7 @@ Početni C++ projekat za temu **P21: Sequence Alignment and Read Mapping**. Prog
 - `full`: direktna Smith–Waterman DP matrica. Jednostavna referentna verzija, sa `O(nm)` memorije po read-u.
 - `rolling`: ista rekurencija, ali čuva samo prethodni i trenutni red DP matrice. Ovo je sekvencijalna memorijska optimizacija i koristi `O(m)` memorije po read-u.
 - `trace`: rolling score redovi uz 2-bitni smjer za svaku DP ćeliju; početne koordinate se dobiju naknadnim traceback prolazom. Time se izbjegava propagiranje koordinata kroz svaku ćeliju, uz `O(nm)` bitova traceback memorije.
+- `wavefront`: tiled wavefront Smith–Waterman za paralelno računanje jednog read-a na više CPU threadova. Pločice računaju anti-dijagonalno i razmjenjuju samo granične scoreove; rezultat i traceback smjerovi su isti kao u `trace` modu.
 - `simd`: ARM NEON inter-sequence SIMD. Jedna 128-bitna vektorska instrukcija obrađuje ćelije iz četiri nezavisna poravnanja istovremeno. Read-ovi se grupišu po četiri; read-ovi različitih dužina koriste neaktivne lane-ove nakon završetka kraćih sekvenci.
 
 ## Verzije algoritma
@@ -16,12 +17,13 @@ Početni C++ projekat za temu **P21: Sequence Alignment and Read Mapping**. Prog
 - **v1.2.0 — `trace`**: single-read optimizacija sa kompaktno zapakovanim traceback smjerovima.
 - **v1.3.0 — `trace`**: smjerovi se pakuju po redovima, bez početnog nuliranja traceback buffera.
 - **v1.4.0 — `trace`**: raw pointer pristupi u kernelu i traceback pakovanje po blokovima od četiri ćelije.
+- **v1.5.0 — `wavefront`**: paralelno računanje pločica unutar jednog read-a, uz worker pool i traceback kompatibilan s `trace`.
 
 Ove verzije označavaju algoritamske varijante; `full`, `rolling` i `simd` su već prisutni u početnom Git commitu. `simd` obrađuje više read-ova zajedno i zato nije dio single-read serije.
 
-Apple CPU profili i rezultati single-read iteracija v1.1.0–v1.4.0 su u [profiling izvještaju](docs/profiling-v1.1.0.md). `trace` v1.4.0 je oko 1.28× brži od v1.3.0 na read-u od 160 bp i 1.26× na read-u od 10 kbp. `sample` profil ne daje hardverske brojače za memorijske stallove; za Instruments trace potreban je puni Xcode, dok je na ovoj mašini dostupan samo Command Line Tools.
+Apple CPU profili i rezultati single-read iteracija v1.1.0–v1.5.0 su u [profiling izvještaju](docs/profiling-v1.1.0.md). Na testiranom read-u od 10 kbp, `wavefront` v1.5.0 je oko 8.29× brži od `trace` v1.4.0 uz automatski broj threadova. `sample` profil ne daje hardverske brojače za memorijske stallove; za Instruments trace potreban je puni Xcode, dok je na ovoj mašini dostupan samo Command Line Tools.
 
-`full`, `rolling` i `trace` računaju jedan DP po read-u sekvencijalno. `trace` koristi manje memorije od `full`; u odnosu na `rolling`, potrošnja zavisi od dužine read-a i reference. `simd` paralelizuje ćelije između četiri read-a na ARM64 procesorima koji podržavaju NEON. Sve implementacije računaju `O(nm)` DP ćelija po read-u. `simd` nije dostupan na x86-64 build-ovima.
+`full`, `rolling` i `trace` računaju jedan DP po read-u sekvencijalno. `wavefront` paralelizuje jedan DP preko threadova. `trace` koristi manje memorije od `full`; u odnosu na `rolling`, potrošnja zavisi od dužine read-a i reference. `simd` paralelizuje ćelije između četiri read-a na ARM64 procesorima koji podržavaju NEON. Sve implementacije računaju `O(nm)` DP ćelija po read-u. `simd` nije dostupan na x86-64 build-ovima.
 
 Koristi se lokalno poravnanje s linearnom gap kaznom. Podrazumijevane vrijednosti su `match=2`, `mismatch=-1`, `gap=-2`. Koordinate su 0-based i half-open. Program vraća score i intervale, ali ne rekonstruiše traceback putanju niti CIGAR string. Ulazni format je FASTA; referentni fajl mora imati tačno jednu sekvencu.
 
@@ -39,7 +41,7 @@ Na macOS-u s Homebrewom, instaliraj CMake pomoću `brew install cmake`.
 Na ARM64 macOS-u može se kompajlirati i direktno, bez CMake-a:
 
 ```sh
-clang++ -O3 -DNDEBUG -std=c++17 -Wall -Wextra -Wpedantic src/main.cpp -o build/sw_mapper
+clang++ -O3 -DNDEBUG -std=c++17 -Wall -Wextra -Wpedantic -pthread src/main.cpp -o build/sw_mapper
 ```
 
 ## Pokretanje
@@ -48,8 +50,11 @@ clang++ -O3 -DNDEBUG -std=c++17 -Wall -Wextra -Wpedantic src/main.cpp -o build/s
 ./build/sw_mapper --reference examples/reference.fa --reads examples/reads.fa --mode rolling
 ./build/sw_mapper --reference examples/reference.fa --reads examples/reads.fa --mode full
 ./build/sw_mapper --reference examples/reference.fa --reads examples/reads.fa --mode trace
+./build/sw_mapper --reference examples/reference.fa --reads examples/reads.fa --mode wavefront --threads 0
 ./build/sw_mapper --reference examples/reference.fa --reads examples/reads.fa --mode simd
 ```
+
+Za `wavefront`, `--threads 0` bira broj radnika automatski. `--tile-rows 0` bira 8 redova za readove do 512 bp i 64 za duže readove; `--tile-columns` je podrazumijevano 2048 i mora biti višekratnik broja 4. Sve tri vrijednosti mogu se podesiti za konkretan CPU i ulaz.
 
 Opcije bodovanja:
 
@@ -62,7 +67,7 @@ Rezultati su CSV na stdout. Vrijeme računanja i procijenjeni GCUPS ispisuju se 
 
 ## Poređenje i mjerenje
 
-`full`, `rolling`, `trace` i `simd` trebaju dati identične score-ove i koordinate. `full`, `rolling` i `trace` računaju jedan read; `simd` obrađuje read-ove u grupi. `full` koristi mnogo memorije, pa ga pokreći samo nad malim ulazima. Za batch poređenje pokreni:
+`full`, `rolling`, `trace`, `wavefront` i `simd` trebaju dati identične score-ove i koordinate. `full`, `rolling` i `trace` računaju jedan read; `wavefront` koristi više threadova za taj read; `simd` obrađuje read-ove u grupi. `full` koristi mnogo memorije, pa ga pokreći samo nad malim ulazima. Za batch poređenje pokreni:
 
 ```sh
 python3 scripts/generate_benchmark.py --output-dir build/benchmark-data
@@ -71,7 +76,7 @@ python3 scripts/benchmark.py --binary build/sw_mapper \
   --reads build/benchmark-data/reads.fa --repeats 7
 ```
 
-Batch benchmark provjeri da su CSV izlazi rolling, trace i SIMD verzija identični. Za fokus na jedan read koristi `scripts/benchmark_single.py`, koji upoređuje full, rolling i trace, provjeri jednakost izlaza, zagrije režime i rotira redoslijed mjerenja. Vrijeme u programu obuhvata DP računanje i alokacije, ali ne uključuje učitavanje FASTA ni ispis. Zabilježi CPU, kompajler, build zastavice, veličine sekvenci i broj ponavljanja.
+Batch benchmark provjeri da su CSV izlazi rolling, trace i SIMD verzija identični. Za fokus na jedan read koristi `scripts/benchmark_single.py`, koji upoređuje full, rolling i trace, provjeri jednakost izlaza, zagrije režime i rotira redoslijed mjerenja. Dodaj `--include-wavefront` da uključi novi paralelni režim. Vrijeme u programu obuhvata DP računanje i alokacije, ali ne uključuje učitavanje FASTA ni ispis. Zabilježi CPU, kompajler, build zastavice, veličine sekvenci i broj ponavljanja.
 
 ```sh
 python3 scripts/generate_benchmark.py --output-dir build/single-read-data \
@@ -79,6 +84,15 @@ python3 scripts/generate_benchmark.py --output-dir build/single-read-data \
   --substitutions 5 --seed 21021
 python3 scripts/benchmark_single.py --binary build/sw_mapper \
   --reference build/single-read-data/reference.fa \
+  --reads build/single-read-data/reads.fa --repeats 7
+```
+
+Poređenje `wavefront` moda sa sekvencijalnim `trace` izlazom može se pokrenuti ovako:
+
+```sh
+python3 scripts/benchmark_single.py --binary build/sw_mapper \
+  --baseline-binary build/releases/sw_mapper-v1.4.0 --trace-only \
+  --include-wavefront --reference build/single-read-data/reference.fa \
   --reads build/single-read-data/reads.fa --repeats 7
 ```
 
