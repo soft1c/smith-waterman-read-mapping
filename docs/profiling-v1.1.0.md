@@ -179,6 +179,33 @@ build/profile-release/sw_mapper --reference build/single-profile-data/reference.
   --reads build/single-profile-data/reads.fa --mode wavefront --threads 0
 ```
 
+## Synchronization iteration: v1.6.0
+
+The v1.5.0 sampler showed the coordinator waiting for the whole worker group after every anti-diagonal. v1.6.0 replaces those global barriers with per-tile dependency counts and a bounded ready queue. A tile is queued as soon as its north and west neighbors finish; workers and the main thread take ready tiles directly. This lets a tile start without waiting for unrelated work elsewhere on the previous anti-diagonal.
+
+The queue stores tile IDs in a preallocated ring, and each tile is enqueued once. Atomic dependency counters publish score borders from both predecessors; the queue mutex and condition variable protect ready work and wake idle threads. The persistent worker pool and main-thread participation from v1.5.0 remain in place.
+
+The optimized v1.6.0 build was measured on the same Apple M5 Pro / Apple clang 21.0.0 setup and single-read inputs as v1.5.0. Runs of v1.5.0 and the candidate were interleaved; all outputs matched the v1.4.0 `trace` CSV exactly:
+
+| Input | v1.5.0 `wavefront` | v1.6.0 `wavefront` | Speedup | Runs |
+|---|---:|---:|---:|---:|
+| Reference 100,000 bp; read 160 bp | 0.007426 s | 0.003805 s | 1.95× | 9 |
+| Reference 100,000 bp; read 10,000 bp | 0.148622 s | 0.118705 s | 1.25× | 7 |
+
+An eight-case randomized check also matched `trace` across varied odd sequence lengths, tile boundaries, scoring parameters, and thread counts. Peak RSS on the 10,000 bp read was effectively unchanged: 303.5 MiB for v1.5.0 and 303.6 MiB for v1.6.0.
+
+Apple `sample` captured the same sustained workload of twelve 10,000 bp alignments processed one after another. In the v1.6.0 main-thread profile, 31 of 668 samples were waiting on the condition variable (4.6%), compared with 139 of 732 (19.0%) in v1.5.0. Only a few samples showed queue-mutex contention. Most samples stayed in the ready-tile processing loop. This supports that the repeated global wait was reduced; the remaining CPU work is in tile processing and queue handling. The capture is still a stack sample and does not provide cache or memory-stall counters. The profile is saved locally as `build/profiling/wavefront-v1.6-sample.txt`.
+
+Reproduce the v1.5.0-to-v1.6.0 benchmark with:
+
+```sh
+python3 scripts/benchmark_single.py --binary build/profile-release/sw_mapper \
+  --baseline-binary build/releases/sw_mapper-v1.5.0 \
+  --baseline-mode wavefront --trace-only --include-wavefront \
+  --reference build/single-profile-data/reference.fa \
+  --reads build/single-profile-data/reads.fa --repeats 7
+```
+
 ## Reproduction
 
-Use the same generated data, optimized build flags, and sampling interval for later versions. Record the complete binary version, compiler, macOS version, dataset parameters, wall time, DP time, and profile file. Compare each single-read optimization against rolling v1.1.0 for output equality and repeated runtime; keep the sampler capture separate from unprofiled timing runs because profiling adds overhead. In v1.5.0, scheduling between tile anti-diagonals is the next software hotspot; hardware counters are still needed to classify any memory stalls.
+Use the same generated data, optimized build flags, and sampling interval for later versions. Record the complete binary version, compiler, macOS version, dataset parameters, wall time, DP time, and profile file. Compare each single-read optimization against rolling v1.1.0 for output equality and repeated runtime; keep the sampler capture separate from unprofiled timing runs because profiling adds overhead. In v1.6.0, tile recurrence and ready-queue overhead remain software targets; hardware counters are still needed to classify any memory stalls.

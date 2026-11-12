@@ -368,11 +368,6 @@ Alignment smith_waterman_wavefront(const std::string& read,
         throw std::length_error("Wavefront tile grid is too large");
     }
     const std::size_t tile_count = tile_row_count * tile_column_count;
-    if (tile_column_count - 1 >
-        std::numeric_limits<std::size_t>::max() - tile_row_count) {
-        throw std::length_error("Wavefront has too many scheduling steps");
-    }
-    const std::size_t wavefront_count = tile_row_count + tile_column_count - 1;
     const std::size_t bottom_stride = tile_columns + 1;
     const std::size_t right_stride = effective_tile_rows + 1;
     if (bottom_stride == 0 || right_stride == 0 ||
@@ -420,29 +415,42 @@ Alignment smith_waterman_wavefront(const std::string& read,
         std::min(worker_count, maximum_wavefront_size));
     const std::size_t background_worker_count = worker_count - 1;
 
-    std::vector<WavefrontTask> tasks;
-    tasks.reserve(maximum_wavefront_size);
-    std::vector<WavefrontTask> current_tasks;
-    current_tasks.reserve(maximum_wavefront_size);
     std::vector<int> main_previous(tile_columns + 1);
     std::vector<int> main_current(tile_columns + 1);
     std::vector<std::vector<int>> worker_previous;
     std::vector<std::vector<int>> worker_current;
-    if (background_worker_count > 0) {
-        worker_previous.reserve(background_worker_count);
-        worker_current.reserve(background_worker_count);
-        for (std::size_t worker = 0; worker < background_worker_count; ++worker) {
-            worker_previous.emplace_back(tile_columns + 1);
-            worker_current.emplace_back(tile_columns + 1);
+    worker_previous.reserve(background_worker_count);
+    worker_current.reserve(background_worker_count);
+    for (std::size_t worker = 0; worker < background_worker_count; ++worker) {
+        worker_previous.emplace_back(tile_columns + 1);
+        worker_current.emplace_back(tile_columns + 1);
+    }
+
+    std::unique_ptr<std::atomic<unsigned int>[]> dependencies(
+        new std::atomic<unsigned int>[tile_count]);
+    for (std::size_t tile_row = 0; tile_row < tile_row_count; ++tile_row) {
+        for (std::size_t tile_column = 0;
+             tile_column < tile_column_count; ++tile_column) {
+            const std::size_t tile_index = tile_row * tile_column_count + tile_column;
+            const unsigned int dependency_count =
+                static_cast<unsigned int>(tile_row > 0) +
+                static_cast<unsigned int>(tile_column > 0);
+            dependencies[tile_index].store(dependency_count,
+                                           std::memory_order_relaxed);
         }
     }
 
-    std::mutex work_mutex;
+    // Bounded ring queue for tiles whose north and west dependencies are done.
+    std::vector<std::size_t> ready_queue(tile_count);
+    std::size_t queue_head = 0;
+    std::size_t queue_tail = 0;
+    std::size_t queue_size = 0;
+    ready_queue[queue_tail] = 0;
+    queue_tail = (queue_tail + 1) % tile_count;
+    ++queue_size;
+    std::mutex queue_mutex;
     std::condition_variable work_available;
-    std::condition_variable wavefront_complete;
-    std::atomic<std::size_t> next_task{0};
-    std::size_t generation = 0;
-    std::size_t completed_workers = 0;
+    std::size_t completed_tiles = 0;
     bool stopping = false;
 
     const auto process_tile = [&](const WavefrontTask& task,
@@ -557,96 +565,87 @@ Alignment smith_waterman_wavefront(const std::string& read,
         tiles[tile_index].best_reference_end = tile_best_reference_end;
     };
 
+    const auto take_ready_tile = [&](std::size_t& tile_index) {
+        std::unique_lock<std::mutex> lock(queue_mutex);
+        work_available.wait(lock, [&]() {
+            return stopping || queue_size > 0 || completed_tiles == tile_count;
+        });
+        if (stopping || queue_size == 0) return false;
+        tile_index = ready_queue[queue_head];
+        queue_head = (queue_head + 1) % tile_count;
+        --queue_size;
+        return true;
+    };
+
+    const auto finish_tile = [&](std::size_t tile_index) {
+        const std::size_t tile_row = tile_index / tile_column_count;
+        const std::size_t tile_column = tile_index % tile_column_count;
+        std::size_t newly_ready[2];
+        std::size_t newly_ready_count = 0;
+        if (tile_row + 1 < tile_row_count) {
+            const std::size_t south_index = tile_index + tile_column_count;
+            if (dependencies[south_index].fetch_sub(
+                    1, std::memory_order_acq_rel) == 1) {
+                newly_ready[newly_ready_count++] = south_index;
+            }
+        }
+        if (tile_column + 1 < tile_column_count) {
+            const std::size_t east_index = tile_index + 1;
+            if (dependencies[east_index].fetch_sub(
+                    1, std::memory_order_acq_rel) == 1) {
+                newly_ready[newly_ready_count++] = east_index;
+            }
+        }
+
+        bool all_tiles_finished = false;
+        {
+            std::lock_guard<std::mutex> lock(queue_mutex);
+            for (std::size_t i = 0; i < newly_ready_count; ++i) {
+                ready_queue[queue_tail] = newly_ready[i];
+                queue_tail = (queue_tail + 1) % tile_count;
+                ++queue_size;
+            }
+            ++completed_tiles;
+            all_tiles_finished = completed_tiles == tile_count;
+        }
+        for (std::size_t i = 0; i < newly_ready_count; ++i) {
+            work_available.notify_one();
+        }
+        if (all_tiles_finished) work_available.notify_all();
+    };
+
+    const auto run_ready_tiles = [&](std::vector<int>& previous,
+                                     std::vector<int>& current) {
+        std::size_t tile_index = 0;
+        while (take_ready_tile(tile_index)) {
+            process_tile({tile_index / tile_column_count,
+                          tile_index % tile_column_count}, previous, current);
+            finish_tile(tile_index);
+        }
+    };
+
     std::vector<std::thread> workers;
-    if (background_worker_count > 0) {
-        workers.reserve(background_worker_count);
-        try {
-            for (std::size_t worker = 0;
-                 worker < background_worker_count; ++worker) {
-                workers.emplace_back([&, worker]() {
-                    auto& previous = worker_previous[worker];
-                    auto& current = worker_current[worker];
-                    std::size_t observed_generation = 0;
-                    while (true) {
-                        std::unique_lock<std::mutex> lock(work_mutex);
-                        work_available.wait(lock, [&]() {
-                            return stopping || generation != observed_generation;
-                        });
-                        if (stopping) return;
-                        observed_generation = generation;
-                        lock.unlock();
-
-                        for (;;) {
-                            const std::size_t task_index =
-                                next_task.fetch_add(1, std::memory_order_relaxed);
-                            if (task_index >= current_tasks.size()) break;
-                            process_tile(current_tasks[task_index], previous, current);
-                        }
-
-                        lock.lock();
-                        ++completed_workers;
-                        if (completed_workers == background_worker_count) {
-                            wavefront_complete.notify_one();
-                        }
-                    }
-                });
-            }
-        } catch (...) {
-            {
-                std::lock_guard<std::mutex> lock(work_mutex);
-                stopping = true;
-            }
-            work_available.notify_all();
-            for (auto& worker : workers) worker.join();
-            throw;
-        }
-    }
-
+    workers.reserve(background_worker_count);
     const auto dp_start = std::chrono::steady_clock::now();
-    for (std::size_t wavefront = 0; wavefront < wavefront_count; ++wavefront) {
-        tasks.clear();
-        const std::size_t first_tile_row = wavefront >= tile_column_count
-            ? wavefront - (tile_column_count - 1) : 0;
-        const std::size_t last_tile_row = std::min(wavefront, tile_row_count - 1);
-        for (std::size_t tile_row = first_tile_row;
-             tile_row <= last_tile_row; ++tile_row) {
-            tasks.push_back({tile_row, wavefront - tile_row});
-        }
-
-        if (background_worker_count == 0) {
-            for (const auto& task : tasks) {
-                process_tile(task, main_previous, main_current);
-            }
-        } else {
-            {
-                std::lock_guard<std::mutex> lock(work_mutex);
-                current_tasks = tasks;
-                next_task.store(0, std::memory_order_relaxed);
-                completed_workers = 0;
-                ++generation;
-            }
-            work_available.notify_all();
-            for (;;) {
-                const std::size_t task_index =
-                    next_task.fetch_add(1, std::memory_order_relaxed);
-                if (task_index >= current_tasks.size()) break;
-                process_tile(current_tasks[task_index], main_previous, main_current);
-            }
-            std::unique_lock<std::mutex> lock(work_mutex);
-            wavefront_complete.wait(lock, [&]() {
-                return completed_workers == background_worker_count;
+    try {
+        for (std::size_t worker = 0;
+             worker < background_worker_count; ++worker) {
+            workers.emplace_back([&, worker]() {
+                run_ready_tiles(worker_previous[worker], worker_current[worker]);
             });
         }
-    }
-
-    if (background_worker_count > 0) {
+    } catch (...) {
         {
-            std::lock_guard<std::mutex> lock(work_mutex);
+            std::lock_guard<std::mutex> lock(queue_mutex);
             stopping = true;
         }
         work_available.notify_all();
         for (auto& worker : workers) worker.join();
+        throw;
     }
+
+    run_ready_tiles(main_previous, main_current);
+    for (auto& worker : workers) worker.join();
 
     Alignment best;
     for (const auto& tile : tiles) {

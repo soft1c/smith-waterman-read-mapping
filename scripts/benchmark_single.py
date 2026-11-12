@@ -45,7 +45,13 @@ def main() -> None:
     parser.add_argument(
         "--baseline-binary",
         type=pathlib.Path,
-        help="optional prior build; its trace mode is compared with the candidate",
+        help="optional prior build; compared in --baseline-mode",
+    )
+    parser.add_argument(
+        "--baseline-mode",
+        choices=("trace", "wavefront"),
+        default="trace",
+        help="mode used for the optional baseline binary (default: trace)",
     )
     parser.add_argument(
         "--trace-only",
@@ -65,6 +71,8 @@ def main() -> None:
         parser.error("repeats must be positive")
     if args.trace_only and not args.baseline_binary:
         parser.error("--trace-only requires --baseline-binary")
+    if args.baseline_mode == "wavefront" and not args.include_wavefront:
+        parser.error("--baseline-mode wavefront requires --include-wavefront")
 
     binary = args.binary.resolve()
     baseline_binary = (
@@ -102,9 +110,12 @@ def main() -> None:
     if any(outputs[mode] != outputs[reference_mode] for mode in modes):
         raise SystemExit(f"ERROR: candidate outputs differ from {reference_mode}")
     if baseline_binary is not None:
-        baseline_output = run(baseline_binary, reference, reads, "trace")[0]
-        if baseline_output != outputs["trace"]:
-            raise SystemExit("ERROR: prior and candidate trace outputs differ")
+        baseline_output = run_mode(baseline_binary, args.baseline_mode)[0]
+        if baseline_output != outputs[reference_mode]:
+            raise SystemExit(
+                f"ERROR: baseline {args.baseline_mode} and candidate "
+                f"{reference_mode} outputs differ"
+            )
     if args.trace_only and args.include_wavefront:
         print("correctness=exact (trace and wavefront CSV outputs match)")
     elif args.trace_only:
@@ -117,9 +128,10 @@ def main() -> None:
     for mode in modes:
         run_mode(binary, mode)
     measurements = [(mode, binary, mode) for mode in modes]
+    baseline_label = f"baseline-{args.baseline_mode}"
     if baseline_binary is not None:
-        run_mode(baseline_binary, "trace")
-        measurements.append(("baseline-trace", baseline_binary, "trace"))
+        run_mode(baseline_binary, args.baseline_mode)
+        measurements.append((baseline_label, baseline_binary, args.baseline_mode))
     times = {label: [] for label, _, _ in measurements}
     gcups = {label: [] for label, _, _ in measurements}
     for repeat in range(args.repeats):
@@ -148,8 +160,9 @@ def main() -> None:
         )
     if baseline_binary is not None:
         print(
-            "speedup_candidate_trace_over_baseline_trace="
-            f"{medians['baseline-trace'] / medians['trace']:.3f}x"
+            f"speedup_candidate_{args.baseline_mode}_over_baseline_"
+            f"{args.baseline_mode}="
+            f"{medians[baseline_label] / medians[args.baseline_mode]:.3f}x"
         )
 
 

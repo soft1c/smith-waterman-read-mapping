@@ -7,7 +7,7 @@ Početni C++ projekat za temu **P21: Sequence Alignment and Read Mapping**. Prog
 - `full`: direktna Smith–Waterman DP matrica. Jednostavna referentna verzija, sa `O(nm)` memorije po read-u.
 - `rolling`: ista rekurencija, ali čuva samo prethodni i trenutni red DP matrice. Ovo je sekvencijalna memorijska optimizacija i koristi `O(m)` memorije po read-u.
 - `trace`: rolling score redovi uz 2-bitni smjer za svaku DP ćeliju; početne koordinate se dobiju naknadnim traceback prolazom. Time se izbjegava propagiranje koordinata kroz svaku ćeliju, uz `O(nm)` bitova traceback memorije.
-- `wavefront`: tiled wavefront Smith–Waterman za paralelno računanje jednog read-a na više CPU threadova. Pločice računaju anti-dijagonalno i razmjenjuju samo granične scoreove; rezultat i traceback smjerovi su isti kao u `trace` modu.
+- `wavefront`: tiled wavefront Smith–Waterman za paralelno računanje jednog read-a na više CPU threadova. Pločica ulazi u bounded ready queue čim završe njene sjeverna i zapadna zavisnost; rezultat i traceback smjerovi su isti kao u `trace` modu.
 - `simd`: ARM NEON inter-sequence SIMD. Jedna 128-bitna vektorska instrukcija obrađuje ćelije iz četiri nezavisna poravnanja istovremeno. Read-ovi se grupišu po četiri; read-ovi različitih dužina koriste neaktivne lane-ove nakon završetka kraćih sekvenci.
 
 ## Verzije algoritma
@@ -18,10 +18,11 @@ Početni C++ projekat za temu **P21: Sequence Alignment and Read Mapping**. Prog
 - **v1.3.0 — `trace`**: smjerovi se pakuju po redovima, bez početnog nuliranja traceback buffera.
 - **v1.4.0 — `trace`**: raw pointer pristupi u kernelu i traceback pakovanje po blokovima od četiri ćelije.
 - **v1.5.0 — `wavefront`**: paralelno računanje pločica unutar jednog read-a, uz worker pool i traceback kompatibilan s `trace`.
+- **v1.6.0 — `wavefront`**: uklonjene globalne barijere između anti-dijagonala; pločice se pokreću čim se završe njihovi preduslovi.
 
 Ove verzije označavaju algoritamske varijante; `full`, `rolling` i `simd` su već prisutni u početnom Git commitu. `simd` obrađuje više read-ova zajedno i zato nije dio single-read serije.
 
-Apple CPU profili i rezultati single-read iteracija v1.1.0–v1.5.0 su u [profiling izvještaju](docs/profiling-v1.1.0.md). Na testiranom read-u od 10 kbp, `wavefront` v1.5.0 je oko 8.29× brži od `trace` v1.4.0 uz automatski broj threadova. `sample` profil ne daje hardverske brojače za memorijske stallove; za Instruments trace potreban je puni Xcode, dok je na ovoj mašini dostupan samo Command Line Tools.
+Apple CPU profili i rezultati single-read iteracija v1.1.0–v1.6.0 su u [profiling izvještaju](docs/profiling-v1.1.0.md). Na testiranom read-u od 10 kbp, uklanjanje wavefront barijera u v1.6.0 je oko 1.25× brže od v1.5.0. `sample` profil ne daje hardverske brojače za memorijske stallove; za Instruments trace potreban je puni Xcode, dok je na ovoj mašini dostupan samo Command Line Tools.
 
 `full`, `rolling` i `trace` računaju jedan DP po read-u sekvencijalno. `wavefront` paralelizuje jedan DP preko threadova. `trace` koristi manje memorije od `full`; u odnosu na `rolling`, potrošnja zavisi od dužine read-a i reference. `simd` paralelizuje ćelije između četiri read-a na ARM64 procesorima koji podržavaju NEON. Sve implementacije računaju `O(nm)` DP ćelija po read-u. `simd` nije dostupan na x86-64 build-ovima.
 
@@ -94,6 +95,16 @@ python3 scripts/benchmark_single.py --binary build/sw_mapper \
   --baseline-binary build/releases/sw_mapper-v1.4.0 --trace-only \
   --include-wavefront --reference build/single-read-data/reference.fa \
   --reads build/single-read-data/reads.fa --repeats 7
+```
+
+Za poređenje `wavefront` verzija kroz benchmark skriptu, dodaj `--baseline-mode wavefront` uz prethodnu verziju:
+
+```sh
+python3 scripts/benchmark_single.py --binary build/profile-release/sw_mapper \
+  --baseline-binary build/releases/sw_mapper-v1.5.0 \
+  --baseline-mode wavefront --trace-only --include-wavefront \
+  --reference build/single-profile-data/reference.fa \
+  --reads build/single-profile-data/reads.fa --repeats 7
 ```
 
 Na ovoj mašini (Apple M5 Pro, ARM64; Apple clang 21.0.0; CMake Release, `-O3 -DNDEBUG`) lokalni rolling/SIMD mjerni ciklus dao je:
