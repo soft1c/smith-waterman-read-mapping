@@ -206,6 +206,14 @@ python3 scripts/benchmark_single.py --binary build/profile-release/sw_mapper \
   --reads build/single-profile-data/reads.fa --repeats 7
 ```
 
+### v1.6.0 follow-up profile and rejected candidates
+
+A fresh optimized `sample` capture ran 40 copies of the 10,000 bp input one after another for three seconds. The main thread recorded 2,190 samples: 2,011 in the ready-tile loop, 108 in condition-variable waits (4.9%), and 40 contending on the queue mutex (1.8%). The worker stacks also spent most sampled time in ready-tile processing, with short waits when the queue was empty. This confirms that queue synchronization is no longer the main cost; tile-cell computation dominates. The capture is saved as `build/profiling/wavefront-v1.6-repeat.sample.txt`.
+
+A separate `-fno-inline` profile mapped the cell recurrence and repeatedly sampled libc++'s initializer-list `std::max` / `max_element`. That profile intentionally changes code generation, so it was only used to locate candidate instructions. Replacing the initializer-list maximum with direct comparisons did not produce a repeatable Release speedup. Two NEON prototypes were also checked against `trace`: vectorizing four adjacent columns while expanding the horizontal gap recurrence was slower on the long read, and vectorizing tile anti-diagonals required scattered 2-bit traceback updates and was much slower. Both prototypes were discarded; v1.6.0 remains the best measured implementation.
+
+The next algorithmic experiment should focus on reducing per-cell work while retaining row-packed traceback stores. A straightforward SIMD recurrence adds enough shuffles and traceback traffic to erase its arithmetic savings. Hardware memory/cache counters are still unavailable because `xctrace` is absent from the installed Command Line Tools.
+
 ## Reproduction
 
 Use the same generated data, optimized build flags, and sampling interval for later versions. Record the complete binary version, compiler, macOS version, dataset parameters, wall time, DP time, and profile file. Compare each single-read optimization against rolling v1.1.0 for output equality and repeated runtime; keep the sampler capture separate from unprofiled timing runs because profiling adds overhead. In v1.6.0, tile recurrence and ready-queue overhead remain software targets; hardware counters are still needed to classify any memory stalls.
