@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -216,34 +217,47 @@ Alignment smith_waterman_trace(const std::string& read,
                                double& dp_seconds) {
     const std::size_t rows = read.size() + 1;
     const std::size_t columns = reference.size() + 1;
-    if (rows > std::numeric_limits<std::size_t>::max() / columns) {
+    const std::size_t direction_bytes_per_row =
+        reference.size() / 4 + (reference.size() % 4 != 0);
+    if (direction_bytes_per_row >
+        std::numeric_limits<std::size_t>::max() / read.size()) {
         throw std::length_error("Traceback matrica je prevelika");
     }
-    const std::size_t matrix_cells = rows * columns;
-    const std::size_t direction_bytes = matrix_cells / 4 + (matrix_cells % 4 != 0);
-    std::vector<std::uint8_t> directions(direction_bytes, 0);
+    const std::size_t direction_bytes = read.size() * direction_bytes_per_row;
+    // Every packed byte is assigned during the DP pass, so avoid zeroing the
+    // entire traceback buffer before writing it.
+    std::unique_ptr<std::uint8_t[]> directions(new std::uint8_t[direction_bytes]);
     std::vector<int> previous(columns, 0), current(columns, 0);
     Alignment best;
 
     const auto dp_start = std::chrono::steady_clock::now();
     for (std::size_t i = 1; i < rows; ++i) {
         current[0] = 0;
-        const std::size_t row_offset = i * columns;
+        const std::size_t direction_row_offset = (i - 1) * direction_bytes_per_row;
+        std::uint8_t packed_directions = 0;
+        unsigned int direction_shift = 0;
         for (std::size_t j = 1; j < columns; ++j) {
             const int diagonal_score = previous[j - 1] +
                 substitution_score(read[i - 1], reference[j - 1], scoring);
             const int up_score = previous[j] + scoring.gap;
             const int left_score = current[j - 1] + scoring.gap;
-            const int score = std::max({0, diagonal_score, up_score, left_score});
+            int score = diagonal_score;
+            if (up_score > score) score = up_score;
+            if (left_score > score) score = left_score;
+            if (score < 0) score = 0;
             std::uint8_t direction = 0;
             if (score > 0) {
                 if (diagonal_score == score) direction = 1;
                 else if (up_score == score) direction = 2;
                 else direction = 3;
             }
-            const std::size_t cell_index = row_offset + j;
-            const unsigned int shift = static_cast<unsigned int>((cell_index % 4) * 2);
-            directions[cell_index / 4] |= static_cast<std::uint8_t>(direction << shift);
+            packed_directions |= static_cast<std::uint8_t>(direction << direction_shift);
+            direction_shift += 2;
+            if (direction_shift == 8 || j + 1 == columns) {
+                directions[direction_row_offset + (j - 1) / 4] = packed_directions;
+                packed_directions = 0;
+                direction_shift = 0;
+            }
             current[j] = score;
             if (score > best.score) {
                 best.score = score;
@@ -257,10 +271,13 @@ Alignment smith_waterman_trace(const std::string& read,
     std::size_t read_index = best.read_end;
     std::size_t reference_index = best.reference_end;
     while (read_index > 0 && reference_index > 0) {
-        const std::size_t cell_index = read_index * columns + reference_index;
-        const unsigned int shift = static_cast<unsigned int>((cell_index % 4) * 2);
+        const std::size_t direction_row_offset =
+            (read_index - 1) * direction_bytes_per_row;
+        const std::size_t direction_index = reference_index - 1;
+        const unsigned int shift = static_cast<unsigned int>((direction_index % 4) * 2);
         const std::uint8_t direction =
-            static_cast<std::uint8_t>((directions[cell_index / 4] >> shift) & 0x3);
+            static_cast<std::uint8_t>(
+                (directions[direction_row_offset + direction_index / 4] >> shift) & 0x3);
         if (direction == 0) break;
         if (direction == 1) {
             --read_index;

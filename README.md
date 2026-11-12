@@ -14,10 +14,11 @@ Početni C++ projekat za temu **P21: Sequence Alignment and Read Mapping**. Prog
 - **v1.0.0 — `full`**: sekvencijalna puna DP matrica i početna referentna implementacija.
 - **v1.1.0 — `rolling`**: sekvencijalno računanje sa rolling redovima i manjom memorijskom potrošnjom.
 - **v1.2.0 — `trace`**: single-read optimizacija sa kompaktno zapakovanim traceback smjerovima.
+- **v1.3.0 — `trace`**: smjerovi se pakuju po redovima, bez početnog nuliranja traceback buffera.
 
 Ove verzije označavaju algoritamske varijante; `full`, `rolling` i `simd` su već prisutni u početnom Git commitu. `simd` obrađuje više read-ova zajedno i zato nije dio single-read serije.
 
-Apple CPU profili rolling v1.1.0 i `trace` v1.2.0 te single-read benchmark su u [profiling izvještaju](docs/profiling-v1.1.0.md). `trace` je 1.84× brži na zabilježenom read-u, uz dodatnu traceback memoriju. `sample` profil ne daje hardverske brojače za memorijske stallove; za Instruments trace potreban je puni Xcode, dok je na ovoj mašini dostupan samo Command Line Tools.
+Apple CPU profili i rezultati single-read iteracija v1.1.0–v1.3.0 su u [profiling izvještaju](docs/profiling-v1.1.0.md). `trace` v1.3.0 je 1.04× brži od v1.2.0 na read-u od 160 bp i 1.07× na read-u od 10 kbp. `sample` profil ne daje hardverske brojače za memorijske stallove; za Instruments trace potreban je puni Xcode, dok je na ovoj mašini dostupan samo Command Line Tools.
 
 `full`, `rolling` i `trace` računaju jedan DP po read-u sekvencijalno. `trace` koristi manje memorije od `full`; u odnosu na `rolling`, potrošnja zavisi od dužine read-a i reference. `simd` paralelizuje ćelije između četiri read-a na ARM64 procesorima koji podržavaju NEON. Sve implementacije računaju `O(nm)` DP ćelija po read-u. `simd` nije dostupan na x86-64 build-ovima.
 

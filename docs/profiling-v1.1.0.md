@@ -86,6 +86,46 @@ python3 scripts/benchmark_single.py --binary build/profile-release/sw_mapper \
   --reads build/single-read-data/reads.fa --repeats 7
 ```
 
+## Next profiler iteration: v1.3.0
+
+To resolve source frames in the Apple sample, a profiling-only Release build used `-O3 -DNDEBUG -g -fno-inline`. This changes performance substantially, so only the call graph was used to choose the next change. In the v1.2.0 capture, samples appeared in both zero-initializing the direction vector and the per-cell `std::max(initializer_list)` call. The optimized v1.2.0 sample otherwise attributed its frames to `main` because the compiler inlined the kernel.
+
+The v1.3.0 `trace` implementation packs four directions into a row-local byte and writes that byte once. It allocates the direction array without zero-filling it, since the DP pass assigns every packed byte. The score maximum is also written as direct comparisons. This removes repeated read-modify-write direction updates and the separate buffer initialization pass.
+
+| Single-read input | v1.2.0 trace median | v1.3.0 trace median | Speedup | Repetitions |
+|---|---:|---:|---:|---:|
+| Reference 100,000 bp; read 160 bp | 0.029166 s | 0.027973 s | 1.043× | 7 |
+| Reference 100,000 bp; read 10,000 bp | 1.562736 s | 1.465844 s | 1.066× | 9 |
+
+CSV output matched exactly between versions. The second profile's direction matrix still uses about 240 MiB; v1.3.0 reduces the work to initialize and update it, not the amount of traceback data stored. A separate odd-width reference check (12,001 bp, four 161 bp reads) also matched across rolling, trace, and SIMD.
+
+The `-fno-inline` sample for v1.3.0 no longer showed the direction-vector zero-fill or initializer-list maximum as hot frames. Remaining source-mapped samples were concentrated around sequence-base access and score-row loads. Because this profile build is much slower than the optimized build, the 1.043× and 1.066× figures above come from separate optimized benchmark runs, not the profile capture.
+
+Reproduce that source-mapped capture with:
+
+```sh
+cmake -S . -B build/profile-noinline -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_CXX_FLAGS_RELEASE='-O3 -DNDEBUG -g -fno-inline'
+cmake --build build/profile-noinline -j
+build/profile-noinline/sw_mapper --reference build/single-profile-data/reference.fa \
+  --reads build/single-profile-data/reads.fa --mode trace \
+  > build/profiling/trace-v1.3-noinline.stdout.csv \
+  2> build/profiling/trace-v1.3-noinline.stderr.txt &
+sw_pid=$!
+/usr/bin/sample "$sw_pid" 1 1 -mayDie -fullPaths \
+  -file build/profiling/trace-v1.3-noinline.sample.txt
+wait "$sw_pid"
+```
+
+Compare the v1.3.0 candidate against a v1.2.0 build with:
+
+```sh
+python3 scripts/benchmark_single.py --binary build/profile-release/sw_mapper \
+  --baseline-binary build/releases/sw_mapper-v1.2.0 --trace-only \
+  --reference build/single-profile-data/reference.fa \
+  --reads build/single-profile-data/reads.fa --repeats 9
+```
+
 This is a CPU stack sample, not a hardware-counter trace. It cannot tell whether the hot instructions are limited by cache misses, memory bandwidth, branch prediction, or instruction throughput. The active developer directory is `/Library/Developer/CommandLineTools`; `xcrun xctrace` reports that `xctrace` is unavailable, and no full Xcode/Instruments installation was found. An Instruments Time Profiler and memory/counter trace should follow when that toolchain is available. Until then, this report does not claim a measured memory-stall bottleneck.
 
 ## Reproduction
