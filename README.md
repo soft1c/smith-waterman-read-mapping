@@ -1,14 +1,25 @@
-# Smith–Waterman: sekvencijalni read mapping
+# Smith–Waterman: read mapping
 
-Početni C++ projekat za temu **P21: Sequence Alignment and Read Mapping**. Program sekvencijalno računa lokalno poravnanje svakog read-a prema jednoj referentnoj sekvenci. Za svaki read ispisuje najbolji score i interval poravnanja.
+Početni C++ projekat za temu **P21: Sequence Alignment and Read Mapping**. Program računa lokalno poravnanje svakog read-a prema jednoj referentnoj sekvenci. Za svaki read ispisuje najbolji score i interval poravnanja.
 
 ## Implementacije
 
 - `full`: direktna Smith–Waterman DP matrica. Jednostavna referentna verzija, sa `O(nm)` memorije po read-u.
 - `rolling`: ista rekurencija, ali čuva samo prethodni i trenutni red DP matrice. Ovo je sekvencijalna memorijska optimizacija i koristi `O(m)` memorije po read-u.
+- `trace`: rolling score redovi uz 2-bitni smjer za svaku DP ćeliju; početne koordinate se dobiju naknadnim traceback prolazom. Time se izbjegava propagiranje koordinata kroz svaku ćeliju, uz `O(nm)` bitova traceback memorije.
 - `simd`: ARM NEON inter-sequence SIMD. Jedna 128-bitna vektorska instrukcija obrađuje ćelije iz četiri nezavisna poravnanja istovremeno. Read-ovi se grupišu po četiri; read-ovi različitih dužina koriste neaktivne lane-ove nakon završetka kraćih sekvenci.
 
-`full` i `rolling` su sekvencijalni. `simd` paralelizuje ćelije između četiri poravnanja na ARM64 procesorima koji podržavaju NEON. Sve tri verzije računaju `O(nm)` DP ćelija po read-u. Rolling rows smanjuje memoriju, a SIMD povećava CPU throughput za batch read-ova. `simd` nije dostupan na x86-64 build-ovima.
+## Verzije algoritma
+
+- **v1.0.0 — `full`**: sekvencijalna puna DP matrica i početna referentna implementacija.
+- **v1.1.0 — `rolling`**: sekvencijalno računanje sa rolling redovima i manjom memorijskom potrošnjom.
+- **v1.2.0 — `trace`**: single-read optimizacija sa kompaktno zapakovanim traceback smjerovima.
+
+Ove verzije označavaju algoritamske varijante; `full`, `rolling` i `simd` su već prisutni u početnom Git commitu. `simd` obrađuje više read-ova zajedno i zato nije dio single-read serije.
+
+Apple CPU profili rolling v1.1.0 i `trace` v1.2.0 te single-read benchmark su u [profiling izvještaju](docs/profiling-v1.1.0.md). `trace` je 1.84× brži na zabilježenom read-u, uz dodatnu traceback memoriju. `sample` profil ne daje hardverske brojače za memorijske stallove; za Instruments trace potreban je puni Xcode, dok je na ovoj mašini dostupan samo Command Line Tools.
+
+`full`, `rolling` i `trace` računaju jedan DP po read-u sekvencijalno. `trace` koristi manje memorije od `full`; u odnosu na `rolling`, potrošnja zavisi od dužine read-a i reference. `simd` paralelizuje ćelije između četiri read-a na ARM64 procesorima koji podržavaju NEON. Sve implementacije računaju `O(nm)` DP ćelija po read-u. `simd` nije dostupan na x86-64 build-ovima.
 
 Koristi se lokalno poravnanje s linearnom gap kaznom. Podrazumijevane vrijednosti su `match=2`, `mismatch=-1`, `gap=-2`. Koordinate su 0-based i half-open. Program vraća score i intervale, ali ne rekonstruiše traceback putanju niti CIGAR string. Ulazni format je FASTA; referentni fajl mora imati tačno jednu sekvencu.
 
@@ -34,6 +45,7 @@ clang++ -O3 -DNDEBUG -std=c++17 -Wall -Wextra -Wpedantic src/main.cpp -o build/s
 ```sh
 ./build/sw_mapper --reference examples/reference.fa --reads examples/reads.fa --mode rolling
 ./build/sw_mapper --reference examples/reference.fa --reads examples/reads.fa --mode full
+./build/sw_mapper --reference examples/reference.fa --reads examples/reads.fa --mode trace
 ./build/sw_mapper --reference examples/reference.fa --reads examples/reads.fa --mode simd
 ```
 
@@ -48,7 +60,7 @@ Rezultati su CSV na stdout. Vrijeme računanja i procijenjeni GCUPS ispisuju se 
 
 ## Poređenje i mjerenje
 
-`full`, `rolling` i `simd` trebaju dati identične score-ove i koordinate. `full` i `rolling` su sekvencijalne reference; `simd` je CPU optimizacija za poređenje. `full` koristi mnogo memorije, pa ga pokreći samo nad malim ulazima. Za reproducibilan veći dataset pokreni:
+`full`, `rolling`, `trace` i `simd` trebaju dati identične score-ove i koordinate. `full`, `rolling` i `trace` računaju jedan read; `simd` obrađuje read-ove u grupi. `full` koristi mnogo memorije, pa ga pokreći samo nad malim ulazima. Za batch poređenje pokreni:
 
 ```sh
 python3 scripts/generate_benchmark.py --output-dir build/benchmark-data
@@ -57,7 +69,16 @@ python3 scripts/benchmark.py --binary build/sw_mapper \
   --reads build/benchmark-data/reads.fa --repeats 7
 ```
 
-Benchmark skripta provjeri da su CSV izlazi rolling i SIMD verzije identični, uradi zagrijavanje i izmjenjuje redoslijed sedam mjerenja. Vrijeme u programu obuhvata DP računanje i alokacije, ali ne uključuje učitavanje FASTA ni ispis. Zabilježi CPU, kompajler, build zastavice, veličine sekvenci i broj ponavljanja.
+Batch benchmark provjeri da su CSV izlazi rolling, trace i SIMD verzija identični. Za fokus na jedan read koristi `scripts/benchmark_single.py`, koji upoređuje full, rolling i trace, provjeri jednakost izlaza, zagrije režime i rotira redoslijed mjerenja. Vrijeme u programu obuhvata DP računanje i alokacije, ali ne uključuje učitavanje FASTA ni ispis. Zabilježi CPU, kompajler, build zastavice, veličine sekvenci i broj ponavljanja.
+
+```sh
+python3 scripts/generate_benchmark.py --output-dir build/single-read-data \
+  --reference-length 100000 --read-count 1 --read-length 160 \
+  --substitutions 5 --seed 21021
+python3 scripts/benchmark_single.py --binary build/sw_mapper \
+  --reference build/single-read-data/reference.fa \
+  --reads build/single-read-data/reads.fa --repeats 7
+```
 
 Na ovoj mašini (Apple M5 Pro, ARM64; Apple clang 21.0.0; CMake Release, `-O3 -DNDEBUG`) lokalni rolling/SIMD mjerni ciklus dao je:
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check rolling/SIMD output equality and report repeated kernel timings."""
+"""Check rolling/trace/SIMD output equality and report repeated timings."""
 
 import argparse
 import pathlib
@@ -43,33 +43,35 @@ def main() -> None:
     reference = args.reference.resolve()
     reads = args.reads.resolve()
 
-    rolling_csv, _, _ = run(binary, reference, reads, "rolling")
-    simd_csv, _, _ = run(binary, reference, reads, "simd")
-    if rolling_csv != simd_csv:
-        raise SystemExit("ERROR: rolling and SIMD scores or coordinates differ")
-    print("correctness=exact (rolling and SIMD CSV outputs match)")
+    modes = ("rolling", "trace", "simd")
+    outputs = {mode: run(binary, reference, reads, mode)[0] for mode in modes}
+    if any(outputs[mode] != outputs["rolling"] for mode in modes[1:]):
+        raise SystemExit("ERROR: rolling, trace, and SIMD CSV outputs differ")
+    print("correctness=exact (rolling, trace, and SIMD CSV outputs match)")
 
-    # Warm up both paths before recording measurements.
-    run(binary, reference, reads, "rolling")
-    run(binary, reference, reads, "simd")
+    # Warm up each path before recording measurements.
+    for mode in modes:
+        run(binary, reference, reads, mode)
 
-    times = {"rolling": [], "simd": []}
-    gcups = {"rolling": [], "simd": []}
+    times = {mode: [] for mode in modes}
+    gcups = {mode: [] for mode in modes}
     for repeat in range(args.repeats):
-        modes = ("rolling", "simd") if repeat % 2 == 0 else ("simd", "rolling")
-        for mode in modes:
+        offset = repeat % len(modes)
+        run_order = modes[offset:] + modes[:offset]
+        for mode in run_order:
             _, seconds, rate = run(binary, reference, reads, mode)
             times[mode].append(seconds)
             gcups[mode].append(rate)
 
     medians = {mode: statistics.median(values) for mode, values in times.items()}
-    for mode in ("rolling", "simd"):
+    for mode in modes:
         print(
             f"{mode}: median_seconds={medians[mode]:.6f} "
             f"median_GCUPS={statistics.median(gcups[mode]):.3f} "
             f"runs=" + ",".join(f"{value:.6f}" for value in times[mode])
         )
-    print(f"speedup_rolling_over_simd={medians['rolling'] / medians['simd']:.3f}x")
+    for mode in modes[1:]:
+        print(f"speedup_rolling_over_{mode}={medians['rolling'] / medians[mode]:.3f}x")
 
 
 if __name__ == "__main__":

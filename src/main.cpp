@@ -210,6 +210,74 @@ Alignment smith_waterman_rolling(const std::string& read,
     return best;
 }
 
+Alignment smith_waterman_trace(const std::string& read,
+                               const std::string& reference,
+                               const Scoring& scoring,
+                               double& dp_seconds) {
+    const std::size_t rows = read.size() + 1;
+    const std::size_t columns = reference.size() + 1;
+    if (rows > std::numeric_limits<std::size_t>::max() / columns) {
+        throw std::length_error("Traceback matrica je prevelika");
+    }
+    const std::size_t matrix_cells = rows * columns;
+    const std::size_t direction_bytes = matrix_cells / 4 + (matrix_cells % 4 != 0);
+    std::vector<std::uint8_t> directions(direction_bytes, 0);
+    std::vector<int> previous(columns, 0), current(columns, 0);
+    Alignment best;
+
+    const auto dp_start = std::chrono::steady_clock::now();
+    for (std::size_t i = 1; i < rows; ++i) {
+        current[0] = 0;
+        const std::size_t row_offset = i * columns;
+        for (std::size_t j = 1; j < columns; ++j) {
+            const int diagonal_score = previous[j - 1] +
+                substitution_score(read[i - 1], reference[j - 1], scoring);
+            const int up_score = previous[j] + scoring.gap;
+            const int left_score = current[j - 1] + scoring.gap;
+            const int score = std::max({0, diagonal_score, up_score, left_score});
+            std::uint8_t direction = 0;
+            if (score > 0) {
+                if (diagonal_score == score) direction = 1;
+                else if (up_score == score) direction = 2;
+                else direction = 3;
+            }
+            const std::size_t cell_index = row_offset + j;
+            const unsigned int shift = static_cast<unsigned int>((cell_index % 4) * 2);
+            directions[cell_index / 4] |= static_cast<std::uint8_t>(direction << shift);
+            current[j] = score;
+            if (score > best.score) {
+                best.score = score;
+                best.read_end = i;
+                best.reference_end = j;
+            }
+        }
+        std::swap(previous, current);
+    }
+
+    std::size_t read_index = best.read_end;
+    std::size_t reference_index = best.reference_end;
+    while (read_index > 0 && reference_index > 0) {
+        const std::size_t cell_index = read_index * columns + reference_index;
+        const unsigned int shift = static_cast<unsigned int>((cell_index % 4) * 2);
+        const std::uint8_t direction =
+            static_cast<std::uint8_t>((directions[cell_index / 4] >> shift) & 0x3);
+        if (direction == 0) break;
+        if (direction == 1) {
+            --read_index;
+            --reference_index;
+        } else if (direction == 2) {
+            --read_index;
+        } else {
+            --reference_index;
+        }
+    }
+    best.read_start = read_index;
+    best.reference_start = reference_index;
+    dp_seconds += std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - dp_start).count();
+    return best;
+}
+
 void smith_waterman_simd_batch(const std::vector<Sequence>& reads,
                                const std::string& reference,
                                const Scoring& scoring,
@@ -368,7 +436,7 @@ std::string csv_escape(const std::string& value) {
 void print_usage(std::ostream& out) {
     out << "Upotreba: sw_mapper --reference ref.fa --reads reads.fa [opcije]\n"
            "Opcije:\n"
-           "  --mode full|rolling|simd     sekvencijalno, rolling ili ARM NEON batch SIMD\n"
+           "  --mode full|rolling|trace|simd   sekvencijalno, compact trace ili batch SIMD\n"
            "  --match N                    bodovi za podudaranje (default 2)\n"
            "  --mismatch N                 kazna za nepodudaranje (default -1)\n"
            "  --gap N                      linearna kazna za gap (default -2)\n"
@@ -413,8 +481,9 @@ Options parse_options(int argc, char** argv) {
     if (options.reference_path.empty() || options.reads_path.empty()) {
         throw std::runtime_error("Opcije --reference i --reads su obavezne");
     }
-    if (options.mode != "full" && options.mode != "rolling" && options.mode != "simd") {
-        throw std::runtime_error("--mode mora biti full, rolling ili simd");
+    if (options.mode != "full" && options.mode != "rolling" &&
+        options.mode != "trace" && options.mode != "simd") {
+        throw std::runtime_error("--mode mora biti full, rolling, trace ili simd");
     }
     if (options.scoring.match <= 0 || options.scoring.mismatch > 0 ||
         options.scoring.gap >= 0) {
@@ -443,11 +512,16 @@ int main(int argc, char** argv) {
                 reads, reference, options.scoring, alignments, dp_seconds);
         } else {
             for (std::size_t i = 0; i < reads.size(); ++i) {
-                alignments[i] = options.mode == "full"
-                    ? smith_waterman_full(
-                        reads[i].bases, reference, options.scoring, dp_seconds)
-                    : smith_waterman_rolling(
+                if (options.mode == "full") {
+                    alignments[i] = smith_waterman_full(
                         reads[i].bases, reference, options.scoring, dp_seconds);
+                } else if (options.mode == "trace") {
+                    alignments[i] = smith_waterman_trace(
+                        reads[i].bases, reference, options.scoring, dp_seconds);
+                } else {
+                    alignments[i] = smith_waterman_rolling(
+                        reads[i].bases, reference, options.scoring, dp_seconds);
+                }
             }
         }
         const auto end = std::chrono::steady_clock::now();
