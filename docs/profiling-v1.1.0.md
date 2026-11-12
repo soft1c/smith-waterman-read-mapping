@@ -126,8 +126,30 @@ python3 scripts/benchmark_single.py --binary build/profile-release/sw_mapper \
   --reads build/single-profile-data/reads.fa --repeats 9
 ```
 
+## Next profiler iteration: v1.4.0
+
+The v1.3.0 source-mapped sample concentrated on per-cell base access and score-row indexing. In v1.4.0, the read base and raw pointers to the reference and score rows are hoisted outside the cell loop. Direction bytes are assembled from four consecutive cells and written once per block, removing the shift counter and pack-flush branch from each cell. The resulting `sample` capture still maps the optimized kernel into `main` because the compiler inlines it; the `-fno-inline` source capture maps the hot samples to the per-cell lambda and recurrence. It does not provide hardware wait or cache counters.
+
+| Single-read input | v1.3.0 trace median | v1.4.0 trace median | Speedup | Repetitions |
+|---|---:|---:|---:|---:|
+| Reference 100,000 bp; read 160 bp | 0.028194 s | 0.021950 s | 1.284× | 7 |
+| Reference 100,000 bp; read 10,000 bp | 1.550714 s | 1.232614 s | 1.258× | 5 |
+
+The benchmark compared outputs exactly. On the 160 bp case, v1.4.0 was 2.44× faster than rolling v1.1.0 and 3.07× faster than full v1.0.0. The odd-width reference check also still matched rolling and SIMD. This run confirms a single-read speedup on both tested read lengths; it does not establish the same gain for other sequence sizes or scoring parameters.
+
+The optimized 1-second Apple `sample` recorded 857 stack samples, attributed to the inlined `main` call site. The run's reported wall time was 1.303 s and DP time 1.303 s. A source-mapped `-fno-inline` capture completed in 1.527 s and showed the recurrence as the remaining hot region. These samples still do not say whether the recurrence waits on memory or execution units.
+
+Compare v1.4.0 with v1.3.0 using:
+
+```sh
+python3 scripts/benchmark_single.py --binary build/profile-release/sw_mapper \
+  --baseline-binary build/releases/sw_mapper-v1.3.0 \
+  --reference build/single-read-data/reference.fa \
+  --reads build/single-read-data/reads.fa --repeats 7
+```
+
 This is a CPU stack sample, not a hardware-counter trace. It cannot tell whether the hot instructions are limited by cache misses, memory bandwidth, branch prediction, or instruction throughput. The active developer directory is `/Library/Developer/CommandLineTools`; `xcrun xctrace` reports that `xctrace` is unavailable, and no full Xcode/Instruments installation was found. An Instruments Time Profiler and memory/counter trace should follow when that toolchain is available. Until then, this report does not claim a measured memory-stall bottleneck.
 
 ## Reproduction
 
-Use the same generated data, optimized build flags, and sampling interval for later versions. Record the complete binary version, compiler, macOS version, dataset parameters, wall time, DP time, and profile file. Compare each single-read optimization against rolling v1.1.0 for output equality and repeated runtime; keep the sampler capture separate from unprofiled timing runs because profiling adds overhead. The next profiler pass should use Instruments once available to inspect the single-read kernel and hardware memory counters.
+Use the same generated data, optimized build flags, and sampling interval for later versions. Record the complete binary version, compiler, macOS version, dataset parameters, wall time, DP time, and profile file. Compare each single-read optimization against rolling v1.1.0 for output equality and repeated runtime; keep the sampler capture separate from unprofiled timing runs because profiling adds overhead. In v1.4.0, the remaining software hotspot is the per-cell score recurrence and best-score tracking; hardware counters are still needed to classify any memory stalls.

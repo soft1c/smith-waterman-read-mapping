@@ -227,43 +227,69 @@ Alignment smith_waterman_trace(const std::string& read,
     // Every packed byte is assigned during the DP pass, so avoid zeroing the
     // entire traceback buffer before writing it.
     std::unique_ptr<std::uint8_t[]> directions(new std::uint8_t[direction_bytes]);
+    std::uint8_t* direction_data = directions.get();
+    const char* read_bases = read.data();
+    const char* reference_bases = reference.data();
     std::vector<int> previous(columns, 0), current(columns, 0);
     Alignment best;
 
     const auto dp_start = std::chrono::steady_clock::now();
+    const auto process_cell = [&](std::size_t j, std::size_t i,
+                                  const char read_base, int* previous_scores,
+                                  int* current_scores) {
+        const int substitution = read_base == reference_bases[j - 1]
+            ? scoring.match : scoring.mismatch;
+        const int diagonal_score = previous_scores[j - 1] + substitution;
+        const int up_score = previous_scores[j] + scoring.gap;
+        const int left_score = current_scores[j - 1] + scoring.gap;
+        int score = diagonal_score;
+        if (up_score > score) score = up_score;
+        if (left_score > score) score = left_score;
+        if (score < 0) score = 0;
+
+        std::uint8_t direction = 0;
+        if (score > 0) {
+            if (diagonal_score == score) direction = 1;
+            else if (up_score == score) direction = 2;
+            else direction = 3;
+        }
+        current_scores[j] = score;
+        if (score > best.score) {
+            best.score = score;
+            best.read_end = i;
+            best.reference_end = j;
+        }
+        return direction;
+    };
+
     for (std::size_t i = 1; i < rows; ++i) {
-        current[0] = 0;
+        int* previous_scores = previous.data();
+        int* current_scores = current.data();
+        const char read_base = read_bases[i - 1];
+        current_scores[0] = 0;
         const std::size_t direction_row_offset = (i - 1) * direction_bytes_per_row;
-        std::uint8_t packed_directions = 0;
-        unsigned int direction_shift = 0;
-        for (std::size_t j = 1; j < columns; ++j) {
-            const int diagonal_score = previous[j - 1] +
-                substitution_score(read[i - 1], reference[j - 1], scoring);
-            const int up_score = previous[j] + scoring.gap;
-            const int left_score = current[j - 1] + scoring.gap;
-            int score = diagonal_score;
-            if (up_score > score) score = up_score;
-            if (left_score > score) score = left_score;
-            if (score < 0) score = 0;
-            std::uint8_t direction = 0;
-            if (score > 0) {
-                if (diagonal_score == score) direction = 1;
-                else if (up_score == score) direction = 2;
-                else direction = 3;
+        std::size_t j = 1;
+        for (; j + 3 < columns; j += 4) {
+            std::uint8_t packed_directions = process_cell(
+                j, i, read_base, previous_scores, current_scores);
+            packed_directions |= static_cast<std::uint8_t>(
+                process_cell(j + 1, i, read_base, previous_scores, current_scores) << 2);
+            packed_directions |= static_cast<std::uint8_t>(
+                process_cell(j + 2, i, read_base, previous_scores, current_scores) << 4);
+            packed_directions |= static_cast<std::uint8_t>(
+                process_cell(j + 3, i, read_base, previous_scores, current_scores) << 6);
+            direction_data[direction_row_offset + (j - 1) / 4] = packed_directions;
+        }
+        if (j < columns) {
+            std::uint8_t packed_directions = 0;
+            unsigned int shift = 0;
+            const std::size_t first_column = j;
+            for (; j < columns; ++j, shift += 2) {
+                packed_directions |= static_cast<std::uint8_t>(
+                    process_cell(j, i, read_base, previous_scores, current_scores) << shift);
             }
-            packed_directions |= static_cast<std::uint8_t>(direction << direction_shift);
-            direction_shift += 2;
-            if (direction_shift == 8 || j + 1 == columns) {
-                directions[direction_row_offset + (j - 1) / 4] = packed_directions;
-                packed_directions = 0;
-                direction_shift = 0;
-            }
-            current[j] = score;
-            if (score > best.score) {
-                best.score = score;
-                best.read_end = i;
-                best.reference_end = j;
-            }
+            direction_data[direction_row_offset + (first_column - 1) / 4] =
+                packed_directions;
         }
         std::swap(previous, current);
     }
@@ -276,8 +302,8 @@ Alignment smith_waterman_trace(const std::string& read,
         const std::size_t direction_index = reference_index - 1;
         const unsigned int shift = static_cast<unsigned int>((direction_index % 4) * 2);
         const std::uint8_t direction =
-            static_cast<std::uint8_t>(
-                (directions[direction_row_offset + direction_index / 4] >> shift) & 0x3);
+            static_cast<std::uint8_t>((direction_data[
+                direction_row_offset + direction_index / 4] >> shift) & 0x3);
         if (direction == 0) break;
         if (direction == 1) {
             --read_index;
