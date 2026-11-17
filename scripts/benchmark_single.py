@@ -65,7 +65,9 @@ def main() -> None:
     )
     parser.add_argument("--threads", type=int, default=0)
     parser.add_argument("--tile-rows", type=int, default=0)
-    parser.add_argument("--tile-columns", type=int, default=2048)
+    parser.add_argument("--tile-columns", type=int, default=0)
+    parser.add_argument("--baseline-tile-rows", type=int, default=0)
+    parser.add_argument("--baseline-tile-columns", type=int, default=2048)
     args = parser.parse_args()
     if args.repeats <= 0:
         parser.error("repeats must be positive")
@@ -95,14 +97,23 @@ def main() -> None:
         "--tile-columns",
         str(args.tile_columns),
     )
+    baseline_wavefront_options = (
+        "--threads",
+        str(args.threads),
+        "--tile-rows",
+        str(args.baseline_tile_rows),
+        "--tile-columns",
+        str(args.baseline_tile_columns),
+    )
 
-    def run_mode(measured_binary, mode):
+    def run_mode(measured_binary, mode, baseline=False):
         return run(
             measured_binary,
             reference,
             reads,
             mode,
-            wavefront_options if mode == "wavefront" else (),
+            (baseline_wavefront_options if baseline else wavefront_options)
+            if mode == "wavefront" else (),
         )
 
     outputs = {mode: run_mode(binary, mode)[0] for mode in modes}
@@ -110,7 +121,8 @@ def main() -> None:
     if any(outputs[mode] != outputs[reference_mode] for mode in modes):
         raise SystemExit(f"ERROR: candidate outputs differ from {reference_mode}")
     if baseline_binary is not None:
-        baseline_output = run_mode(baseline_binary, args.baseline_mode)[0]
+        baseline_output = run_mode(
+            baseline_binary, args.baseline_mode, baseline=True)[0]
         if baseline_output != outputs[reference_mode]:
             raise SystemExit(
                 f"ERROR: baseline {args.baseline_mode} and candidate "
@@ -127,18 +139,20 @@ def main() -> None:
 
     for mode in modes:
         run_mode(binary, mode)
-    measurements = [(mode, binary, mode) for mode in modes]
+    measurements = [(mode, binary, mode, False) for mode in modes]
     baseline_label = f"baseline-{args.baseline_mode}"
     if baseline_binary is not None:
-        run_mode(baseline_binary, args.baseline_mode)
-        measurements.append((baseline_label, baseline_binary, args.baseline_mode))
-    times = {label: [] for label, _, _ in measurements}
-    gcups = {label: [] for label, _, _ in measurements}
+        run_mode(baseline_binary, args.baseline_mode, baseline=True)
+        measurements.append(
+            (baseline_label, baseline_binary, args.baseline_mode, True))
+    times = {label: [] for label, _, _, _ in measurements}
+    gcups = {label: [] for label, _, _, _ in measurements}
     for repeat in range(args.repeats):
         offset = repeat % len(measurements)
         run_order = measurements[offset:] + measurements[:offset]
-        for label, measured_binary, mode in run_order:
-            _, seconds, rate = run_mode(measured_binary, mode)
+        for label, measured_binary, mode, is_baseline in run_order:
+            _, seconds, rate = run_mode(
+                measured_binary, mode, baseline=is_baseline)
             times[label].append(seconds)
             gcups[label].append(rate)
 

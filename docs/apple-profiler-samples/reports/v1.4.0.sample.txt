@@ -1,0 +1,71 @@
+Analysis of sampling sw_mapper-v1.4.0 (pid 37916) every 10 milliseconds
+Process:         sw_mapper-v1.4.0 [37916]
+Path:            /Users/USER/*/sw_mapper-v1.4.0
+Load Address:    0x1000dc000
+Identifier:      sw_mapper-v1.4.0
+Version:         ???
+Code Type:       ARM64
+Parent Process:  zsh [37851]
+Target Type:     live task
+
+Date/Time:       2026-11-17 11:26:56.461 +0100
+Launch Time:     2026-11-17 11:26:56.442 +0100
+OS Version:      macOS 26.7.2 (25G332)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         6752K
+Physical footprint (peak):  6752K
+Idle exit:                  untracked
+----
+
+Call graph:
+    21 Thread_8842442: Main Thread
+    + 21 _dyld_start  (in dyld) + 0  [0x1004b09c0]
+    161 Thread_8842442   DispatchQueue_1: com.apple.main-thread  (serial)
+      161 start  (in dyld) + 6992  [0x186bf94e4]
+        160 main  (in sw_mapper-v1.4.0) + 388  [0x1000dc6bc]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:562
+        ! 45 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.4.0) + 448  [0x1000de210]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:273
+        ! : 33 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 120  [0x1000e1ef0]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:257
+        ! : 5 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 144  [0x1000e1f08]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:262
+        ! : 4 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 44  [0x1000e1ea4]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:243
+        ! : 2 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 32  [0x1000e1e98]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:242
+        ! : 1 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 28  [0x1000e1e94]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:241
+        ! 39 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.4.0) + 484  [0x1000de234]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:276
+        ! : 22 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 120  [0x1000e1ef0]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:257
+        ! : 10 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 144  [0x1000e1f08]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:262
+        ! : 7 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 44,36  [0x1000e1ea4,0x1000e1e9c]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:243
+        ! 37 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.4.0) + 516  [0x1000de254]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:278
+        ! : 24 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 120,124  [0x1000e1ef0,0x1000e1ef4]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:257
+        ! : 8 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 144  [0x1000e1f08]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:262
+        ! : 5 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 44,36  [0x1000e1ea4,0x1000e1e9c]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:243
+        ! 30 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.4.0) + 548  [0x1000de274]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:280
+        ! : 21 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 120,124  [0x1000e1ef0,0x1000e1ef4]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:257
+        ! : 5 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 144  [0x1000e1f08]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:262
+        ! : 4 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0) + 44,36  [0x1000e1ea4,0x1000e1e9c]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:243
+        ! 6 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.4.0) + 560  [0x1000de280]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:281
+        ! 2 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.4.0) + 1096  [0x1000de498]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:322
+        ! : 2 std::vector<int>::~vector[abi:nqe220106]()  (in sw_mapper-v1.4.0) + 40  [0x1000e2588]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:262
+        ! :   2 std::vector<int>::__destroy_vector::operator()[abi:nqe220106]()  (in sw_mapper-v1.4.0) + 32  [0x1000e2420]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:251
+        ! :     2 std::vector<int>::clear[abi:nqe220106]()  (in sw_mapper-v1.4.0) + 36  [0x1000e2480]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:566
+        ! :       1 std::vector<int>::__base_destruct_at_end[abi:nqe220106](int*)  (in sw_mapper-v1.4.0) + 28  [0x1000e2514]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:777
+        ! :       1 std::vector<int>::__base_destruct_at_end[abi:nqe220106](int*)  (in sw_mapper-v1.4.0) + 60  [0x1000e2534]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:778
+        ! :         1 <deduplicated_symbol>  (in sw_mapper-v1.4.0) + 0  [0x1000dee5c]
+        ! 1 (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.4.0) + 512  [0x1000de250]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:278
+        1 main  (in sw_mapper-v1.4.0) + 64  [0x1000dc578]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:543
+          1 (anonymous namespace)::read_fasta(std::basic_string<char> const&)  (in sw_mapper-v1.4.0) + 64  [0x1000dcf70]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.4.0/src/main.cpp:63
+            1 std::basic_ifstream<char>::basic_ifstream(std::basic_string<char> const&, unsigned int)  (in sw_mapper-v1.4.0) + 120  [0x1000df4d4]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/fstream:1220
+              1 std::basic_filebuf<char>::open(char const*, unsigned int)  (in libc++.1.dylib) + 84  [0x186f09a38]
+                1 fopen  (in libsystem_c.dylib) + 220  [0x186e627bc]
+                  1 open$NOCANCEL  (in libsystem_kernel.dylib) + 64  [0x186f95c64]
+                    1 __open_nocancel  (in libsystem_kernel.dylib) + 8  [0x186f81948]
+
+Total number in stack (recursive counted multiple, when >=5):
+
+Sort by top of stack, same collapsed (when >= 5):
+        (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)::$_0::operator()(unsigned long, unsigned long, char, int*, int*) const  (in sw_mapper-v1.4.0)        151
+        _dyld_start  (in dyld)        21
+        (anonymous namespace)::smith_waterman_trace(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.4.0)        7
+
+Binary images description not available
+

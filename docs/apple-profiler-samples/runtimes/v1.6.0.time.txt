@@ -1,0 +1,19 @@
+mode=wavefront reads=800 reference_length=100000 seconds=2.456364 dp_seconds=2.400278 GCUPS=5.210955
+        2.46 real        25.91 user         4.23 sys
+            15794176  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               28307  page reclaims
+                   4  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+              485524  involuntary context switches
+        508957775105  instructions retired
+        128038092471  cycles elapsed
+            15384936  peak memory footprint

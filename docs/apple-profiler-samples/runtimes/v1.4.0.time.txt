@@ -1,0 +1,19 @@
+mode=trace reads=800 reference_length=100000 seconds=15.965932 dp_seconds=15.962179 GCUPS=0.801707
+       15.97 real        15.90 user         0.04 sys
+             7192576  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                 613  page reclaims
+                   3  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   0  voluntary context switches
+                2137  involuntary context switches
+        431993403442  instructions retired
+         71254067914  cycles elapsed
+             6766928  peak memory footprint

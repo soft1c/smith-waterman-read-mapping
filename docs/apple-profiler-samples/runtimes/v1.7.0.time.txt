@@ -1,0 +1,21 @@
+Version: v1.7.0 batch candidate from the current working tree
+Build: Apple clang 21, -O3 -DNDEBUG -g -std=c++17 -pthread
+Input: reference=100000bp, reads=800 x 160bp, substitutions=5, seed=21021
+Command: sw_mapper --mode batch --threads 0
+Measurement: five complete runs; values below are medians unless stated otherwise
+
+Program seconds: 0.944447 s
+DP seconds: 0.944444 s
+GCUPS: 13.552906
+/usr/bin/time elapsed: 0.95 s
+CPU user/system: 16.04 / 0.05 s
+Average CPU use: 16.93 of 18 cores (94.1%)
+Maximum resident set size: 103989248 bytes (99.17 MiB)
+Page faults / reclaims: 1 / 6537
+Swaps / block input / block output: 0 / 0 / 0
+Instructions retired: 365074922191
+Cycles elapsed: 68969912639
+Instructions per cycle: 5.29
+
+The exact per-run values are in v1.7.0-runs.csv. CSV output was byte-identical
+to both the v1.1.0 rolling and v1.6.0 wavefront outputs for this input.

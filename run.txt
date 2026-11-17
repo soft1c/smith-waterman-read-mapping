@@ -1,0 +1,44 @@
+--fast
+./build/sw_mapper \
+  --reference examples/demo_long_reference.fa \
+  --reads examples/demo_long_reads.fa \
+  --mode full
+
+--100k
+./build/sw_mapper \
+  --reference examples/demo_mega_reference.fa \
+  --reads examples/demo_mega_reads.fa \
+  --mode full
+
+--mil
+  ahsoftic@IB-AHSOFTIC-M smith-waterman % /usr/bin/time -l ./build/sw_mapper \
+  --reference examples/demo_mega_reference.fa \
+  --reads examples/demo_mega_reads.fa \
+  --mode full
+
+
+--memory footprint
+/usr/bin/time -l ./build/sw_mapper \
+  --reference examples/demo_mega_reference.fa \
+  --reads examples/demo_mega_reads.fa \
+  --mode rolling
+
+
+--command
+ /usr/bin/time -l ./build/sw_mapper --reference examples/demo_mega_reference.fa --reads examples/demo_mega_reads.fa --mode rolling
+
+--simd
+./build/sw_mapper --reference examples/demo_mega_reference.fa --reads examples/demo_mega_reads_4.fa --mode simd
+
+--nosimd4x
+./build/sw_mapper --reference examples/demo_mega_reference.fa --reads examples/demo_mega_reads_4.fa --mode rolling
+
+
+
+apple metrics/profiler
+
+python3 scripts/demo_versions.py \
+  --reference build/presentation-data/reference.fa \
+  --reads build/presentation-data/reads.fa \
+  --output-dir build/presentation-versions \
+  --versions v1.4.0

@@ -1,0 +1,158 @@
+Analysis of sampling sw_mapper-v1.0.0 (pid 37892) every 10 milliseconds
+Process:         sw_mapper-v1.0.0 [37892]
+Path:            /Users/USER/*/sw_mapper-v1.0.0
+Load Address:    0x104d98000
+Identifier:      sw_mapper-v1.0.0
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  zsh [37851]
+Target Type:     live task
+
+Date/Time:       2026-11-17 11:26:50.196 +0100
+Launch Time:     2026-11-17 11:26:50.172 +0100
+OS Version:      macOS 26.7.2 (25G332)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         6752K
+Physical footprint (peak):  6752K
+Idle exit:                  untracked
+----
+
+Call graph:
+    182 Thread_8842278   DispatchQueue_1: com.apple.main-thread  (serial)
+      182 start  (in dyld) + 6992  [0x186bf94e4]
+        182 main  (in sw_mapper-v1.0.0) + 240  [0x104d98628]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:449
+          89 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 380  [0x104d9a154]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:198
+          + 38 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 108  [0x104d9d408]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:112
+          + ! 32 std::max[abi:nqe220106]<int>(std::initializer_list<int>)  (in sw_mapper-v1.0.0) + 52  [0x104d9d808]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max.h:49
+          + ! : 28 std::max_element[abi:nqe220106]<int const*, std::__less<void, void>>(int const*, int const*, std::__less<void, void>)  (in sw_mapper-v1.0.0) + 20  [0x104d9d830]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max_element.h:43
+          + ! : | 13 std::__max_element[abi:nqe220106]<std::__less<void, void>&, int const*>(int const*, int const*, std::__less<void, void>&)  (in sw_mapper-v1.0.0) + 64  [0x104d9d888]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max_element.h:32
+          + ! : | + 13 std::__less<void, void>::operator()[abi:nqe220106]<int, int>(int const&, int const&) const  (in sw_mapper-v1.0.0) + 4  [0x104d9d8b4]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/comp.h:42
+          + ! : | 12 std::__max_element[abi:nqe220106]<std::__less<void, void>&, int const*>(int const*, int const*, std::__less<void, void>&)  (in sw_mapper-v1.0.0) + 64  [0x104d9d888]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max_element.h:32
+          + ! : | 2 std::__max_element[abi:nqe220106]<std::__less<void, void>&, int const*>(int const*, int const*, std::__less<void, void>&)  (in sw_mapper-v1.0.0) + 28  [0x104d9d864]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max_element.h:0
+          + ! : | 1 std::__max_element[abi:nqe220106]<std::__less<void, void>&, int const*>(int const*, int const*, std::__less<void, void>&)  (in sw_mapper-v1.0.0) + 8  [0x104d9d850]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max_element.h:26
+          + ! : 3 std::__max_element[abi:nqe220106]<std::__less<void, void>&, int const*>(int const*, int const*, std::__less<void, void>&)  (in sw_mapper-v1.0.0) + 96  [0x104d9d8a8]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max_element.h:35
+          + ! : 1 std::max_element[abi:nqe220106]<int const*, std::__less<void, void>>(int const*, int const*, std::__less<void, void>)  (in sw_mapper-v1.0.0) + 20  [0x104d9d830]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max_element.h:43
+          + ! 3 std::max[abi:nqe220106]<int>(std::initializer_list<int>)  (in sw_mapper-v1.0.0) + 28  [0x104d9d7f0]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max.h:49
+          + ! : 3 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 0  [0x104d9a984]
+          + ! 2 std::max[abi:nqe220106]<int>(std::initializer_list<int>)  (in sw_mapper-v1.0.0) + 40  [0x104d9d7fc]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max.h:49
+          + ! : 2 std::initializer_list<int>::end[abi:nqe220106]() const  (in sw_mapper-v1.0.0) + 0  [0x104d9d83c]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/initializer_list:90
+          + ! 1 std::max[abi:nqe220106]<int>(std::initializer_list<int>)  (in sw_mapper-v1.0.0) + 28  [0x104d9d7f0]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max.h:49
+          + 12 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 176  [0x104d9d44c]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:126
+          + 8 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 4,52,...  [0x104d9d3a0,0x104d9d3d0,...]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:110
+          + 7 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 88  [0x104d9d3f4]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:111
+          + ! 7 (anonymous namespace)::Cell::Cell()  (in sw_mapper-v1.0.0) + 4  [0x104d9d738]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:41
+          + 5 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 116  [0x104d9d410]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:118
+          + 5 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 124  [0x104d9d418]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:119
+          + 3 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 144  [0x104d9d42c]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:116
+          + 3 std::max[abi:nqe220106]<int>(std::initializer_list<int>)  (in sw_mapper-v1.0.0) + 60  [0x104d9d810]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/max.h:49
+          + 2 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 196,212  [0x104d9d460,0x104d9d470]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:0
+          + 2 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 108  [0x104d9d408]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:112
+          + 2 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 184  [0x104d9d454]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:127
+          + 2 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 192  [0x104d9d45c]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:130
+          22 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 284  [0x104d9a0f4]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:200
+          + 22 std::basic_string<char>::operator[][abi:nqe220106](unsigned long) const  (in sw_mapper-v1.0.0) + 20  [0x104d9ccb0]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/string:1366
+          +   15 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 12  [0x104d9a8f8]
+          +   ! 6 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 20  [0x104d9a954]
+          +   ! : 6 std::basic_string<char>::__is_long[abi:nqe220106]() const  (in sw_mapper-v1.0.0) + 0  [0x104d9a978]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/string:2153
+          +   ! 5 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 0,20  [0x104d9a940,0x104d9a954]
+          +   ! 4 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 0  [0x104d9a984]
+          +   4 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 0  [0x104d9a8e8]
+          +   3 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 0  [0x104d9a8ec]
+          19 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 300  [0x104d9a104]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:200
+          + 19 std::basic_string<char>::operator[][abi:nqe220106](unsigned long) const  (in sw_mapper-v1.0.0) + 20  [0x104d9ccb0]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/string:1366
+          +   13 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 12  [0x104d9a8f8]
+          +   ! 9 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 20,4,...  [0x104d9a954,0x104d9a944,...]
+          +   ! 3 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 20  [0x104d9a954]
+          +   ! : 3 std::basic_string<char>::__is_long[abi:nqe220106]() const  (in sw_mapper-v1.0.0) + 0  [0x104d9a978]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/string:2153
+          +   ! 1 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 0  [0x104d9a984]
+          +   4 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 0  [0x104d9a8e8]
+          +   2 <deduplicated_symbol>  (in sw_mapper-v1.0.0) + 0  [0x104d9a8ec]
+          12 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 448  [0x104d9a198]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:194
+          + 6 std::basic_string<char>::size[abi:nqe220106]() const  (in sw_mapper-v1.0.0) + 20  [0x104d9a4a0]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/string:1301
+          + ! 6 std::basic_string<char>::__is_long[abi:nqe220106]() const  (in sw_mapper-v1.0.0) + 0,8  [0x104d9a978,0x104d9a980]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/string:2153
+          + 3 std::basic_string<char>::__get_long_size[abi:nqe220106]() const  (in sw_mapper-v1.0.0) + 0  [0x104d9b8d8]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/string:2236
+          + 2 std::basic_string<char>::size[abi:nqe220106]() const  (in sw_mapper-v1.0.0) + 20  [0x104d9a4a0]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/string:1301
+          + 1 std::basic_string<char>::size[abi:nqe220106]() const  (in sw_mapper-v1.0.0) + 4  [0x104d9a490]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/string:1300
+          10 std::basic_string<char>::operator[][abi:nqe220106](unsigned long) const  (in sw_mapper-v1.0.0) + 28  [0x104d9ccb8]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/string:1367
+          4 (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0) + 232,244  [0x104d9d484,0x104d9d490]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:133
+          4 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 448  [0x104d9a198]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:194
+          4 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 228  [0x104d9a0bc]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:195
+          + 4 std::vector<(anonymous namespace)::Cell>::operator[][abi:nqe220106](unsigned long)  (in sw_mapper-v1.0.0) + 0  [0x104d9d7c8]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:413
+          4 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 244  [0x104d9a0cc]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:196
+          + 4 std::vector<(anonymous namespace)::Cell>::operator[][abi:nqe220106](unsigned long)  (in sw_mapper-v1.0.0) + 0  [0x104d9d7c8]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:413
+          4 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 260  [0x104d9a0dc]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:197
+          + 4 std::vector<(anonymous namespace)::Cell>::operator[][abi:nqe220106](unsigned long)  (in sw_mapper-v1.0.0) + 0  [0x104d9d7c8]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:413
+          3 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 320  [0x104d9a118]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:200
+          + 3 (anonymous namespace)::substitution_score(char, char, (anonymous namespace)::Scoring const&)  (in sw_mapper-v1.0.0) + 12  [0x104d9cc94]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:105
+          2 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 392  [0x104d9a160]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:198
+          + 2 std::vector<(anonymous namespace)::Cell>::operator[][abi:nqe220106](unsigned long)  (in sw_mapper-v1.0.0) + 0  [0x104d9d7c8]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:413
+          2 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 420  [0x104d9a17c]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:204
+          + 2 std::vector<(anonymous namespace)::Cell>::operator[][abi:nqe220106](unsigned long)  (in sw_mapper-v1.0.0) + 0  [0x104d9d7c8]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:413
+          2 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 436  [0x104d9a18c]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:204
+          + 2 (anonymous namespace)::consider_best((anonymous namespace)::Cell const&, unsigned long, unsigned long, (anonymous namespace)::Alignment&)  (in sw_mapper-v1.0.0) + 4,8  [0x104d9d4c8,0x104d9d4cc]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:138
+          1 (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0) + 208  [0x104d9a0a8]  /Users/ahsoftic/faks/prs/smith-waterman/build/apple-profiler-ui/sources/v1.0.0/src/main.cpp:195
+
+Total number in stack (recursive counted multiple, when >=5):
+        5       std::vector<(anonymous namespace)::Cell>::operator[][abi:nqe220106](unsigned long)  (in sw_mapper-v1.0.0) + 0  [0x104d9d7c8]  /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__vector/vector.h:413
+
+Sort by top of stack, same collapsed (when >= 5):
+        (anonymous namespace)::choose_cell((anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, (anonymous namespace)::Cell const&, int, int, int, unsigned long, unsigned long)  (in sw_mapper-v1.0.0)        45
+        <deduplicated_symbol>  (in sw_mapper-v1.0.0)        35
+        std::__max_element[abi:nqe220106]<std::__less<void, void>&, int const*>(int const*, int const*, std::__less<void, void>&)  (in sw_mapper-v1.0.0)        18
+        std::vector<(anonymous namespace)::Cell>::operator[][abi:nqe220106](unsigned long)  (in sw_mapper-v1.0.0)        16
+        std::basic_string<char>::__is_long[abi:nqe220106]() const  (in sw_mapper-v1.0.0)        15
+        std::__less<void, void>::operator()[abi:nqe220106]<int, int>(int const&, int const&) const  (in sw_mapper-v1.0.0)        13
+        std::basic_string<char>::operator[][abi:nqe220106](unsigned long) const  (in sw_mapper-v1.0.0)        10
+        (anonymous namespace)::Cell::Cell()  (in sw_mapper-v1.0.0)        7
+        (anonymous namespace)::smith_waterman_rolling(std::basic_string<char> const&, std::basic_string<char> const&, (anonymous namespace)::Scoring const&, double&)  (in sw_mapper-v1.0.0)        5
+
+Binary Images:
+       0x104d98000 -        0x104d9f40b +sw_mapper-v1.0.0 (0) <C4336F43-3139-3226-B73E-3F7A92D0C658> /Users/*/sw_mapper-v1.0.0
+       0x186b50000 -        0x186ba2b4b  libobjc.A.dylib (951.7) <74772A34-83D8-3B3B-82A0-B5678E177C8D> /usr/lib/libobjc.A.dylib
+       0x186ba3000 -        0x186bd8115  libdyld.dylib (1387.2) <41529082-1172-3CFC-8ADF-A682ABE693F8> /usr/lib/system/libdyld.dylib
+       0x186bd9000 -        0x186c8c523  dyld (1.0.0 - 1387.2) <57F4E7E7-A497-38BB-A3D2-A459C622460B> /usr/lib/dyld
+       0x186c8d000 -        0x186c90228  libsystem_blocks.dylib (96) <974D6EDA-1213-3D11-B95D-267A66BADDCF> /usr/lib/system/libsystem_blocks.dylib
+       0x186c91000 -        0x186ce555f  libxpc.dylib (3102.160.5.700.1) <4E6ADFFF-C2F0-3404-B820-46F7AE2554FF> /usr/lib/system/libxpc.dylib
+       0x186ce6000 -        0x186d06a1f  libsystem_trace.dylib (1861.160.4.700.1) <CFC3D51E-6886-3520-9DCB-C11E276E416D> /usr/lib/system/libsystem_trace.dylib
+       0x186d07000 -        0x186db56b7  libcorecrypto.dylib (1922.160.10.700.1) <1AB30A65-3FE6-3A5A-9078-796D9D590B7C> /usr/lib/system/libcorecrypto.dylib
+       0x186db6000 -        0x186e06257  libsystem_malloc.dylib (812.160.5) <8CF02A42-BC33-38BF-B14A-FA9B13B3CA3F> /usr/lib/system/libsystem_malloc.dylib
+       0x186e07000 -        0x186e4e23f  libdispatch.dylib (1542.160.2) <7202DA41-6AF6-3268-9EA3-00013AF42D10> /usr/lib/system/libdispatch.dylib
+       0x186e4f000 -        0x186e51ffb  libsystem_featureflags.dylib (103) <2E4939D0-6A88-38BC-B0A3-612870FBC436> /usr/lib/system/libsystem_featureflags.dylib
+       0x186e52000 -        0x186ed31e7  libsystem_c.dylib (1752.160.4) <8CA64BC9-6B11-3685-84AE-F0AF4247B0C8> /usr/lib/system/libsystem_c.dylib
+       0x186ed4000 -        0x186f64ae7  libc++.1.dylib (2100.43) <04D82867-1CBD-3AC4-B744-B27DCD09692F> /usr/lib/libc++.1.dylib
+       0x186f65000 -        0x186f7f75f  libc++abi.dylib (2100.43) <45F8930E-87C7-3EE1-9638-31B9F476CF68> /usr/lib/libc++abi.dylib
+       0x186f80000 -        0x186fbd2f7  libsystem_kernel.dylib (12377.161.15.701.48) <ABE830C7-CBE9-3FEC-8F6D-97E5C691BD54> /usr/lib/system/libsystem_kernel.dylib
+       0x186fbe000 -        0x186fcab3b  libsystem_pthread.dylib (539.100.4) <275D7230-23C1-32EF-B22B-14F61E30AA89> /usr/lib/system/libsystem_pthread.dylib
+       0x186fcb000 -        0x186fd3963  libsystem_platform.dylib (375.120.2) <8BC876D3-95BB-3D23-B7CB-0948531E49EB> /usr/lib/system/libsystem_platform.dylib
+       0x186fd4000 -        0x1870036eb  libsystem_info.dylib (600) <309040CE-F9D3-3BC0-8464-C9F9C96B2F90> /usr/lib/system/libsystem_info.dylib
+       0x18afab000 -        0x18afb4e5f  libsystem_darwin.dylib (1752.160.4) <51EF635C-A89E-336B-8409-4E44C2443F55> /usr/lib/system/libsystem_darwin.dylib
+       0x18b414000 -        0x18b4261b6  libsystem_notify.dylib (348.160.3) <455CFD7F-6F0F-3F8B-83CC-C0B5172E4A00> /usr/lib/system/libsystem_notify.dylib
+       0x18d6e9000 -        0x18d703f7b  libsystem_networkextension.dylib (2226.161.1.700.2) <76849D08-8FBB-3D8A-A1C5-23FE8D7EDD7D> /usr/lib/system/libsystem_networkextension.dylib
+       0x18d786000 -        0x18d79dfdf  libsystem_asl.dylib (406) <C2379107-E507-325E-BADE-A9E32156D38A> /usr/lib/system/libsystem_asl.dylib
+       0x18f343000 -        0x18f34b387  libsystem_symptoms.dylib (2169.160.3.701.1) <23506ADC-641A-348A-BBEF-590787FD73FC> /usr/lib/system/libsystem_symptoms.dylib
+       0x1935e8000 -        0x193620373  libsystem_containermanager.dylib (725.160.3.701.2) <FEB99D23-5EDA-3471-9982-D5EABEB0444B> /usr/lib/system/libsystem_containermanager.dylib
+       0x1949fc000 -        0x194a005d7  libsystem_configuration.dylib (1405.160.3.702.2) <2B64BA6F-6B26-3743-A977-D485645E6408> /usr/lib/system/libsystem_configuration.dylib
+       0x194a01000 -        0x194a0799f  libsystem_sandbox.dylib (2680.160.6.701.1) <48D7EC25-49F3-3557-B08C-58CBF6A9495B> /usr/lib/system/libsystem_sandbox.dylib
+       0x19605c000 -        0x19605f1db  libquarantine.dylib (196.160.2.701.3) <DA61E1C2-CAC1-3573-84F7-C90BB204A615> /usr/lib/system/libquarantine.dylib
+       0x1967fb000 -        0x196801d03  libsystem_coreservices.dylib (191.5.1) <65440E1E-5462-330D-B538-F16B45F4275C> /usr/lib/system/libsystem_coreservices.dylib
+       0x196d8a000 -        0x196dc7a77  libsystem_m.dylib (3312.100.1) <9BFFB8D5-AB8F-3396-AF0F-98A8A4BFBD42> /usr/lib/system/libsystem_m.dylib
+       0x196dc9000 -        0x196dcc527  libmacho.dylib (1387.2) <A482169A-B97C-30E5-8A3A-2E98DFBA74E7> /usr/lib/system/libmacho.dylib
+       0x196de6000 -        0x196df33a7  libcommonCrypto.dylib (600035) <3F3A9815-0AB5-378D-BDF9-9981EE44AB03> /usr/lib/system/libcommonCrypto.dylib
+       0x196df4000 -        0x196dfdca3  libunwind.dylib (2100.2) <EF950883-F36C-3B59-9960-8FAD4BDD66D5> /usr/lib/system/libunwind.dylib
+       0x196e06000 -        0x196e10d2b  libcopyfile.dylib (240.160.2.703.1) <8AB5AFDF-C952-3E66-8BE7-F1B22AE7B1E0> /usr/lib/system/libcopyfile.dylib
+       0x196e11000 -        0x196e14987  libcompiler_rt.dylib (103.3) <C6F39A7B-4194-3C96-B35C-E1007EA16736> /usr/lib/system/libcompiler_rt.dylib
+       0x196e15000 -        0x196e1978b  libsystem_collections.dylib (1752.160.4) <40857856-B232-32C2-B91D-7D13B3D889C4> /usr/lib/system/libsystem_collections.dylib
+       0x196e1a000 -        0x196e1d4cf  libsystem_secinit.dylib (168.100.7) <FC9F3012-C4B8-3EE4-A6EC-90E2738A46BB> /usr/lib/system/libsystem_secinit.dylib
+       0x196e1e000 -        0x196e20bf7  libremovefile.dylib (85.100.6) <332434B4-C80C-36C1-8C0B-4813EEE16F55> /usr/lib/system/libremovefile.dylib
+       0x196e21000 -        0x196e21f27  libkeymgr.dylib (31) <7DC4E9CC-C237-3F67-846F-2CCCFAB9000C> /usr/lib/system/libkeymgr.dylib
+       0x196e22000 -        0x196e2ae3f  libsystem_dnssd.dylib (2881.160.4.703.1) <E0DAC488-6562-3A27-929E-20BEFC6A11E4> /usr/lib/system/libsystem_dnssd.dylib
+       0x196e2b000 -        0x196e3009b  libcache.dylib (95) <D4FAC022-C551-3A65-8EF1-8285532030C7> /usr/lib/system/libcache.dylib
+       0x196e31000 -        0x196e32ce3  libSystem.B.dylib (1356) <8A197E38-519D-32D1-9011-49E892FA320D> /usr/lib/libSystem.B.dylib
+       0x28ab32000 -        0x28ab39349  libRosetta.dylib (367.9) <81C8280C-CB3A-3F3D-82C9-38C2C1E176FB> /usr/lib/libRosetta.dylib
+       0x28c747000 -        0x28c74aa4b  libsystem_darwindirectory.dylib (122) <27786CEA-2A9E-38F0-8949-D3CB8CCF1DE1> /usr/lib/system/libsystem_darwindirectory.dylib
+       0x28c74b000 -        0x28c75539b  libsystem_eligibility.dylib (319.160.17) <B0F822FD-F94D-3C30-BCDE-FDA9C93DB5F1> /usr/lib/system/libsystem_eligibility.dylib
+       0x28c756000 -        0x28c75d88b  libsystem_sanitizers.dylib (26.1) <35C9CE3E-7ABA-3872-AF41-429F4CA3B51D> /usr/lib/system/libsystem_sanitizers.dylib
+       0x28c75e000 -        0x28c75ebbf  libsystem_trial.dylib (474.2.18.2.1) <698A199E-73E6-3D12-AB87-C8E100BEA52E> /usr/lib/system/libsystem_trial.dylib

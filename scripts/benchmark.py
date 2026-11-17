@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check rolling/trace/SIMD output equality and report repeated timings."""
+"""Check local batch modes for output equality and report repeated timings."""
 
 import argparse
 import pathlib
@@ -43,11 +43,12 @@ def main() -> None:
     reference = args.reference.resolve()
     reads = args.reads.resolve()
 
-    modes = ("rolling", "trace", "simd")
+    modes = ("rolling", "trace", "simd", "batch")
     outputs = {mode: run(binary, reference, reads, mode)[0] for mode in modes}
     if any(outputs[mode] != outputs["rolling"] for mode in modes[1:]):
-        raise SystemExit("ERROR: rolling, trace, and SIMD CSV outputs differ")
-    print("correctness=exact (rolling, trace, and SIMD CSV outputs match)")
+        raise SystemExit(
+            "ERROR: rolling, trace, SIMD, and batch CSV outputs differ")
+    print("correctness=exact (rolling, trace, SIMD, and batch CSV outputs match)")
 
     # Warm up each path before recording measurements.
     for mode in modes:

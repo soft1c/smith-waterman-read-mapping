@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -50,10 +51,10 @@ struct Cell {
 struct Options {
     std::string reference_path;
     std::string reads_path;
-    std::string mode = "rolling";
+    std::string mode = "auto";
     std::size_t threads = 0;
     std::size_t tile_rows = 0;
-    std::size_t tile_columns = 2048;
+    std::size_t tile_columns = 0;
     Scoring scoring;
 };
 
@@ -348,27 +349,33 @@ Alignment smith_waterman_wavefront(const std::string& read,
                                    std::size_t tile_rows,
                                    std::size_t tile_columns,
                                    double& dp_seconds) {
-    if (tile_columns == 0 || tile_columns % 4 != 0) {
+    // Tile dimensions are tuned to expose enough independent work without
+    // creating too many tiny tasks. Long reads use wider tiles; keeping 64
+    // rows bounds border storage on very large inputs.
+    const std::size_t effective_tile_rows = tile_rows == 0
+        ? (read.size() <= 160 ? 8
+           : read.size() <= 512 ? 16 : 64)
+        : tile_rows;
+    const std::size_t effective_tile_columns = tile_columns == 0
+        ? (read.size() > 512 && reference.size() >= 200'000 ? 4096 : 2048)
+        : tile_columns;
+    if (effective_tile_columns % 4 != 0) {
         throw std::runtime_error(
             "Wavefront tile columns moraju biti pozitivan višekratnik broja 4");
     }
-
-    // Short reads need enough tile rows to expose parallel work. Taller tiles
-    // reduce scheduling and border-storage overhead for long reads.
-    const std::size_t effective_tile_rows = tile_rows == 0
-        ? (read.size() <= 512 ? 8 : 64) : tile_rows;
 
     const std::size_t tile_row_count =
         read.size() / effective_tile_rows +
         (read.size() % effective_tile_rows != 0);
     const std::size_t tile_column_count =
-        reference.size() / tile_columns + (reference.size() % tile_columns != 0);
+        reference.size() / effective_tile_columns +
+        (reference.size() % effective_tile_columns != 0);
     if (tile_column_count >
         std::numeric_limits<std::size_t>::max() / tile_row_count) {
         throw std::length_error("Wavefront tile grid is too large");
     }
     const std::size_t tile_count = tile_row_count * tile_column_count;
-    const std::size_t bottom_stride = tile_columns + 1;
+    const std::size_t bottom_stride = effective_tile_columns + 1;
     const std::size_t right_stride = effective_tile_rows + 1;
     if (bottom_stride == 0 || right_stride == 0 ||
         tile_count > std::numeric_limits<std::size_t>::max() / bottom_stride ||
@@ -389,17 +396,20 @@ Alignment smith_waterman_wavefront(const std::string& read,
     const char* reference_bases = reference.data();
 
     std::vector<WavefrontTile> tiles(tile_count);
-    std::vector<int> bottom_borders(tile_count * bottom_stride);
-    std::vector<int> right_borders(tile_count * right_stride);
+    // These borders are fully written by their producing tile before any
+    // dependent tile reads them, so avoid value-initializing the large buffers.
+    std::unique_ptr<int[]> bottom_borders(new int[tile_count * bottom_stride]);
+    std::unique_ptr<int[]> right_borders(new int[tile_count * right_stride]);
     for (std::size_t tile_row = 0; tile_row < tile_row_count; ++tile_row) {
         const std::size_t read_begin = tile_row * effective_tile_rows;
         const std::size_t height =
             std::min(effective_tile_rows, read.size() - read_begin);
         for (std::size_t tile_column = 0; tile_column < tile_column_count;
              ++tile_column) {
-            const std::size_t reference_begin = tile_column * tile_columns;
+            const std::size_t reference_begin = tile_column * effective_tile_columns;
             const std::size_t width =
-                std::min(tile_columns, reference.size() - reference_begin);
+                std::min(effective_tile_columns,
+                         reference.size() - reference_begin);
             tiles[tile_row * tile_column_count + tile_column] =
                 WavefrontTile{height, width, 0, 0, 0};
         }
@@ -415,15 +425,16 @@ Alignment smith_waterman_wavefront(const std::string& read,
         std::min(worker_count, maximum_wavefront_size));
     const std::size_t background_worker_count = worker_count - 1;
 
-    std::vector<int> main_previous(tile_columns + 1);
-    std::vector<int> main_current(tile_columns + 1);
-    std::vector<std::vector<int>> worker_previous;
-    std::vector<std::vector<int>> worker_current;
+    std::unique_ptr<int[]> main_previous(new int[effective_tile_columns + 1]);
+    std::unique_ptr<int[]> main_current(new int[effective_tile_columns + 1]);
+    // Each active scratch-row range is filled or copied before it is read.
+    std::vector<std::unique_ptr<int[]>> worker_previous;
+    std::vector<std::unique_ptr<int[]>> worker_current;
     worker_previous.reserve(background_worker_count);
     worker_current.reserve(background_worker_count);
     for (std::size_t worker = 0; worker < background_worker_count; ++worker) {
-        worker_previous.emplace_back(tile_columns + 1);
-        worker_current.emplace_back(tile_columns + 1);
+        worker_previous.emplace_back(new int[effective_tile_columns + 1]);
+        worker_current.emplace_back(new int[effective_tile_columns + 1]);
     }
 
     std::unique_ptr<std::atomic<unsigned int>[]> dependencies(
@@ -454,23 +465,24 @@ Alignment smith_waterman_wavefront(const std::string& read,
     bool stopping = false;
 
     const auto process_tile = [&](const WavefrontTask& task,
-                                  std::vector<int>& previous,
-                                  std::vector<int>& current) {
+                                  int*& previous,
+                                  int*& current) {
         const std::size_t tile_row = task.tile_row;
         const std::size_t tile_column = task.tile_column;
         const std::size_t tile_index = tile_row * tile_column_count + tile_column;
         const std::size_t read_begin = tile_row * effective_tile_rows;
-        const std::size_t reference_begin = tile_column * tile_columns;
+        const std::size_t reference_begin =
+            tile_column * effective_tile_columns;
         const WavefrontTile& tile = tiles[tile_index];
-        int* bottom = bottom_borders.data() + tile_index * bottom_stride;
-        int* right = right_borders.data() + tile_index * right_stride;
+        int* bottom = bottom_borders.get() + tile_index * bottom_stride;
+        int* right = right_borders.get() + tile_index * right_stride;
 
         if (tile_row == 0) {
-            std::fill_n(previous.data(), tile.width + 1, 0);
+            std::fill_n(previous, tile.width + 1, 0);
         } else {
-            const int* north = bottom_borders.data() +
+            const int* north = bottom_borders.get() +
                 (tile_index - tile_column_count) * bottom_stride;
-            std::copy_n(north, tile.width + 1, previous.data());
+            std::copy_n(north, tile.width + 1, previous);
         }
         right[0] = previous[tile.width];
 
@@ -484,7 +496,7 @@ Alignment smith_waterman_wavefront(const std::string& read,
             if (tile_column == 0) {
                 current[0] = 0;
             } else {
-                const int* west = right_borders.data() +
+                const int* west = right_borders.get() +
                     (tile_index - 1) * right_stride;
                 current[0] = west[local_row];
             }
@@ -559,7 +571,7 @@ Alignment smith_waterman_wavefront(const std::string& read,
             std::swap(previous, current);
         }
 
-        std::copy_n(previous.data(), tile.width + 1, bottom);
+        std::copy_n(previous, tile.width + 1, bottom);
         tiles[tile_index].best_score = tile_best_score;
         tiles[tile_index].best_read_end = tile_best_read_end;
         tiles[tile_index].best_reference_end = tile_best_reference_end;
@@ -614,8 +626,7 @@ Alignment smith_waterman_wavefront(const std::string& read,
         if (all_tiles_finished) work_available.notify_all();
     };
 
-    const auto run_ready_tiles = [&](std::vector<int>& previous,
-                                     std::vector<int>& current) {
+    const auto run_ready_tiles = [&](int*& previous, int*& current) {
         std::size_t tile_index = 0;
         while (take_ready_tile(tile_index)) {
             process_tile({tile_index / tile_column_count,
@@ -631,7 +642,9 @@ Alignment smith_waterman_wavefront(const std::string& read,
         for (std::size_t worker = 0;
              worker < background_worker_count; ++worker) {
             workers.emplace_back([&, worker]() {
-                run_ready_tiles(worker_previous[worker], worker_current[worker]);
+                int* previous = worker_previous[worker].get();
+                int* current = worker_current[worker].get();
+                run_ready_tiles(previous, current);
             });
         }
     } catch (...) {
@@ -644,7 +657,9 @@ Alignment smith_waterman_wavefront(const std::string& read,
         throw;
     }
 
-    run_ready_tiles(main_previous, main_current);
+    int* previous = main_previous.get();
+    int* current = main_current.get();
+    run_ready_tiles(previous, current);
     for (auto& worker : workers) worker.join();
 
     Alignment best;
@@ -825,6 +840,65 @@ void smith_waterman_simd_batch(const std::vector<Sequence>& reads,
 #endif
 }
 
+void smith_waterman_parallel_batch(const std::vector<Sequence>& reads,
+                                   const std::string& reference,
+                                   const Scoring& scoring,
+                                   std::size_t requested_threads,
+                                   std::vector<Alignment>& alignments,
+                                   double& dp_seconds) {
+    if (reads.empty()) return;
+
+    std::size_t worker_count = requested_threads;
+    if (worker_count == 0) worker_count = std::thread::hardware_concurrency();
+    if (worker_count == 0) worker_count = 1;
+    worker_count = std::min(worker_count, reads.size());
+
+    std::atomic<std::size_t> next_read{0};
+    std::atomic<bool> cancelled{false};
+    std::exception_ptr failure;
+    std::mutex failure_mutex;
+    const auto dp_start = std::chrono::steady_clock::now();
+
+    const auto run_worker = [&]() {
+        double worker_dp_seconds = 0.0;
+        try {
+            while (!cancelled.load(std::memory_order_relaxed)) {
+                const std::size_t read_index =
+                    next_read.fetch_add(1, std::memory_order_relaxed);
+                if (read_index >= reads.size()) break;
+                alignments[read_index] = smith_waterman_trace(
+                    reads[read_index].bases, reference, scoring,
+                    worker_dp_seconds);
+            }
+        } catch (...) {
+            cancelled.store(true, std::memory_order_relaxed);
+            std::lock_guard<std::mutex> lock(failure_mutex);
+            if (!failure) failure = std::current_exception();
+        }
+    };
+
+    std::vector<std::thread> workers;
+    workers.reserve(worker_count - 1);
+    try {
+        for (std::size_t worker = 1; worker < worker_count; ++worker) {
+            workers.emplace_back(run_worker);
+        }
+    } catch (...) {
+        cancelled.store(true, std::memory_order_relaxed);
+        for (auto& worker : workers) worker.join();
+        throw;
+    }
+
+    run_worker();
+    for (auto& worker : workers) worker.join();
+    if (failure) std::rethrow_exception(failure);
+
+    // In batch mode DP time is elapsed wall time for the parallel batch, not
+    // the sum of overlapping per-read durations from all worker threads.
+    dp_seconds += std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - dp_start).count();
+}
+
 std::string csv_escape(const std::string& value) {
     if (value.find_first_of(",\"\n\r") == std::string::npos) {
         return value;
@@ -844,10 +918,10 @@ std::string csv_escape(const std::string& value) {
 void print_usage(std::ostream& out) {
     out << "Upotreba: sw_mapper --reference ref.fa --reads reads.fa [opcije]\n"
            "Opcije:\n"
-           "  --mode full|rolling|trace|wavefront|simd   način poravnanja\n"
-           "  --threads N                   broj wavefront radnika (0 = automatski)\n"
+           "  --mode auto|full|rolling|trace|wavefront|simd|batch   način poravnanja\n"
+           "  --threads N                   broj radnika (0 = automatski)\n"
            "  --tile-rows N                 redovi po pločici (0 = automatski)\n"
-           "  --tile-columns N              kolone po pločici, višekratnik 4 (default 2048)\n"
+           "  --tile-columns N              kolone po pločici, višekratnik 4 (0 = automatski)\n"
            "  --match N                    bodovi za podudaranje (default 2)\n"
            "  --mismatch N                 kazna za nepodudaranje (default -1)\n"
            "  --gap N                      linearna kazna za gap (default -2)\n"
@@ -912,14 +986,15 @@ Options parse_options(int argc, char** argv) {
     if (options.reference_path.empty() || options.reads_path.empty()) {
         throw std::runtime_error("Opcije --reference i --reads su obavezne");
     }
-    if (options.mode != "full" && options.mode != "rolling" &&
+    if (options.mode != "auto" && options.mode != "full" &&
+        options.mode != "rolling" &&
         options.mode != "trace" && options.mode != "wavefront" &&
-        options.mode != "simd") {
+        options.mode != "simd" && options.mode != "batch") {
         throw std::runtime_error(
-            "--mode mora biti full, rolling, trace, wavefront ili simd");
+            "--mode mora biti auto, full, rolling, trace, wavefront, simd ili batch");
     }
     if (options.mode == "wavefront" &&
-        (options.tile_columns == 0 || options.tile_columns % 4 != 0)) {
+        (options.tile_columns != 0 && options.tile_columns % 4 != 0)) {
         throw std::runtime_error(
             "Wavefront tile columns moraju biti pozitivan višekratnik broja 4");
     }
@@ -941,22 +1016,40 @@ int main(int argc, char** argv) {
         }
         const auto reads = read_fasta(options.reads_path);
         const std::string& reference = reference_records.front().bases;
+        std::string mode = options.mode;
+        if (mode == "auto") {
+            const std::size_t worker_count = options.threads == 0
+                ? std::max<std::size_t>(1, std::thread::hardware_concurrency())
+                : options.threads;
+            // A small group of reads can underuse a large batch pool. In that
+            // case, process each read with wavefront parallelism; larger groups
+            // get better throughput from one shared batch pool.
+            const std::size_t small_batch_limit =
+                std::max<std::size_t>(1, worker_count / 4);
+            const bool use_wavefront = reads.size() == 1 ||
+                (reads.size() > 1 && reads.size() <= small_batch_limit);
+            mode = use_wavefront ? "wavefront" : "batch";
+        }
         std::vector<Alignment> alignments(reads.size());
         double dp_seconds = 0.0;
 
         const auto start = std::chrono::steady_clock::now();
-        if (options.mode == "simd") {
+        if (mode == "simd") {
             smith_waterman_simd_batch(
                 reads, reference, options.scoring, alignments, dp_seconds);
+        } else if (mode == "batch") {
+            smith_waterman_parallel_batch(
+                reads, reference, options.scoring, options.threads,
+                alignments, dp_seconds);
         } else {
             for (std::size_t i = 0; i < reads.size(); ++i) {
-                if (options.mode == "full") {
+                if (mode == "full") {
                     alignments[i] = smith_waterman_full(
                         reads[i].bases, reference, options.scoring, dp_seconds);
-                } else if (options.mode == "trace") {
+                } else if (mode == "trace") {
                     alignments[i] = smith_waterman_trace(
                         reads[i].bases, reference, options.scoring, dp_seconds);
-                } else if (options.mode == "wavefront") {
+                } else if (mode == "wavefront") {
                     alignments[i] = smith_waterman_wavefront(
                         reads[i].bases, reference, options.scoring, options.threads,
                         options.tile_rows, options.tile_columns, dp_seconds);
@@ -984,7 +1077,8 @@ int main(int argc, char** argv) {
         const double gcups = seconds > 0.0
             ? static_cast<double>(cells / seconds / 1'000'000'000.0L) : 0.0;
         std::cerr << std::fixed << std::setprecision(6)
-                  << "mode=" << options.mode
+                  << "mode=" << mode
+                  << (options.mode == "auto" ? " requested_mode=auto" : "")
                   << " reads=" << reads.size()
                   << " reference_length=" << reference.size()
                   << " seconds=" << seconds
